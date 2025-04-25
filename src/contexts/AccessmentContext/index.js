@@ -28,8 +28,18 @@ export const AssessmentProvider = ({ children }) => {
         setLoading(true);
         try {
           // Load questions
-          const questionData = await fetchQuestions();
-          setQuestions(questionData);
+          let questionData = await fetchQuestions();
+          
+          // Sort questions by sequenceId if available, otherwise fallback to index
+          if (questionData && questionData.length > 0) {
+            if (questionData[0].sequenceId !== undefined) {
+              questionData = questionData.sort((a, b) => a.sequenceId - b.sequenceId);
+            }
+            
+            setQuestions(questionData);
+          } else {
+            setQuestions([]);
+          }
           
           // Load assessment status
           if (participantId) {
@@ -37,14 +47,24 @@ export const AssessmentProvider = ({ children }) => {
             setAssessmentStatus(status.status || 'not_started');
             
             if (status.lastQuestionIndex !== undefined) {
-              setCurrentQuestionIndex(status.lastQuestionIndex);
+              // Validate that index is within bounds
+              if (status.lastQuestionIndex >= 0 && status.lastQuestionIndex < questionData.length) {
+                setCurrentQuestionIndex(status.lastQuestionIndex);
+              } else {
+                // If index is out of bounds, reset to beginning
+                console.warn('Last question index out of bounds, resetting to 0');
+                setCurrentQuestionIndex(0);
+              }
+            } else {
+              // If no last question index, start from beginning
+              setCurrentQuestionIndex(0);
             }
           }
           
           setError(null);
         } catch (err) {
+          console.error('Error loading assessment data:', err);
           setError('Failed to load assessment data. Please try again.');
-          console.error(err);
         } finally {
           setLoading(false);
         }
@@ -55,6 +75,10 @@ export const AssessmentProvider = ({ children }) => {
   }, [participantId]);
 
   const startAssessment = async (id) => {
+    // Save to localStorage immediately to prevent race conditions
+    localStorage.setItem('participantId', id);
+    
+    // Update state immediately
     setParticipantId(id);
     setAssessmentStatus('in_progress');
     setCurrentQuestionIndex(0);
@@ -63,6 +87,7 @@ export const AssessmentProvider = ({ children }) => {
       await updateAssessmentStatus(id, 'in_progress', 0);
     } catch (err) {
       console.error('Error starting assessment:', err);
+      // Even if the API call fails, we want the UI to work with local state
     }
   };
 
@@ -96,6 +121,41 @@ export const AssessmentProvider = ({ children }) => {
     setRecordings([...recordings, recording]);
   };
 
+  // Filter questions by audio type
+  const getQuestionsByType = (type) => {
+    return questions.filter(q => q.audioType === type);
+  };
+
+  const instructionQuestions = getQuestionsByType('instruction');
+  const practiceQuestions = getQuestionsByType('practice');
+  const testQuestions = getQuestionsByType('test');
+
+  // Get the overall progress
+  const getProgress = () => {
+    if (questions.length === 0) return 0;
+    return ((currentQuestionIndex + 1) / questions.length) * 100;
+  };
+
+  // Get the current phase progress
+  const getPhaseProgress = () => {
+    if (!questions[currentQuestionIndex]) return 0;
+    
+    const currentType = questions[currentQuestionIndex].audioType;
+    const phaseQuestions = getQuestionsByType(currentType);
+    
+    if (phaseQuestions.length === 0) return 0;
+    
+    // Find how many questions of this phase we've completed
+    const phaseIndices = questions
+      .map((q, index) => ({ index, audioType: q.audioType }))
+      .filter(q => q.audioType === currentType)
+      .map(q => q.index);
+    
+    const currentPhaseQuestionIndex = phaseIndices.indexOf(currentQuestionIndex);
+    
+    return ((currentPhaseQuestionIndex + 1) / phaseQuestions.length) * 100;
+  };
+
   return (
     <AssessmentContext.Provider
       value={{
@@ -108,10 +168,15 @@ export const AssessmentProvider = ({ children }) => {
         participantId,
         assessmentStatus,
         recordings,
+        instructionQuestions,
+        practiceQuestions,
+        testQuestions,
         startAssessment,
         goToNextQuestion,
         completeAssessment,
-        addRecording
+        addRecording,
+        getProgress,
+        getPhaseProgress
       }}
     >
       {children}

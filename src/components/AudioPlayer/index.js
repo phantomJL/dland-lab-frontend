@@ -1,14 +1,15 @@
-// src/components/AudioPlayer.jsx
+// src/components/AudioPlayer/index.js
 import React, { useState, useRef, useEffect } from 'react';
 import { Box, Button, LinearProgress, CircularProgress, Typography } from '@mui/material';
 
-const AudioPlayer = ({ audioUrl, onPlayComplete }) => {
+const AudioPlayer = ({ audioUrl, onPlayComplete, autoPlay = false }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [hasPlayed, setHasPlayed] = useState(false);
   
   const audioRef = useRef(null);
   const progressIntervalRef = useRef(null);
@@ -20,10 +21,16 @@ const AudioPlayer = ({ audioUrl, onPlayComplete }) => {
       const handleLoadedMetadata = () => {
         setDuration(audio.duration);
         setIsLoading(false);
+        
+        // Auto-play if enabled
+        if (autoPlay && !hasPlayed) {
+          playAudio();
+        }
       };
       
-      const handleError = () => {
-        setError('Error loading audio file');
+      const handleError = (e) => {
+        console.error('Audio error:', e);
+        setError('Error loading audio file. Please try refreshing the page.');
         setIsLoading(false);
       };
       
@@ -31,6 +38,7 @@ const AudioPlayer = ({ audioUrl, onPlayComplete }) => {
         setIsPlaying(false);
         setProgress(100);
         clearInterval(progressIntervalRef.current);
+        setHasPlayed(true);
         if (onPlayComplete) onPlayComplete();
       };
       
@@ -47,7 +55,7 @@ const AudioPlayer = ({ audioUrl, onPlayComplete }) => {
         }
       };
     }
-  }, [onPlayComplete]);
+  }, [autoPlay, hasPlayed, onPlayComplete]);
   
   useEffect(() => {
     // Reset state when audio URL changes
@@ -56,6 +64,7 @@ const AudioPlayer = ({ audioUrl, onPlayComplete }) => {
     setCurrentTime(0);
     setError('');
     setIsLoading(true);
+    setHasPlayed(false);
     
     if (progressIntervalRef.current) {
       clearInterval(progressIntervalRef.current);
@@ -64,18 +73,28 @@ const AudioPlayer = ({ audioUrl, onPlayComplete }) => {
   
   const playAudio = () => {
     if (audioRef.current) {
-      audioRef.current.play();
-      setIsPlaying(true);
+      const playPromise = audioRef.current.play();
       
-      // Update progress
-      progressIntervalRef.current = setInterval(() => {
-        const audio = audioRef.current;
-        if (audio) {
-          const progressValue = (audio.currentTime / audio.duration) * 100;
-          setProgress(progressValue);
-          setCurrentTime(audio.currentTime);
-        }
-      }, 100);
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            setIsPlaying(true);
+            
+            // Update progress
+            progressIntervalRef.current = setInterval(() => {
+              const audio = audioRef.current;
+              if (audio) {
+                const progressValue = (audio.currentTime / audio.duration) * 100;
+                setProgress(progressValue);
+                setCurrentTime(audio.currentTime);
+              }
+            }, 100);
+          })
+          .catch(error => {
+            console.error('Error playing audio:', error);
+            setError('Could not play audio. Please check your browser permissions.');
+          });
+      }
     }
   };
   
@@ -87,19 +106,39 @@ const AudioPlayer = ({ audioUrl, onPlayComplete }) => {
     }
   };
   
+  const restartAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0;
+      setCurrentTime(0);
+      setProgress(0);
+      playAudio();
+    }
+  };
+  
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
   
+  // Handle seeking in the progress bar
+  const handleProgressClick = (e) => {
+    if (audioRef.current && !isLoading) {
+      const progressBar = e.currentTarget;
+      const rect = progressBar.getBoundingClientRect();
+      const clickPosition = (e.clientX - rect.left) / rect.width;
+      
+      // Set new time
+      const newTime = clickPosition * audioRef.current.duration;
+      audioRef.current.currentTime = newTime;
+      setCurrentTime(newTime);
+      setProgress(clickPosition * 100);
+    }
+  };
+  
   return (
     <Box className="audio-player" sx={{ mb: 3 }}>
       <audio ref={audioRef} src={audioUrl} preload="metadata" />
-      
-      <Typography variant="h6" gutterBottom>
-        Listen to the question
-      </Typography>
       
       {isLoading && !error ? (
         <Box sx={{ display: 'flex', alignItems: 'center', my: 2 }}>
@@ -107,7 +146,23 @@ const AudioPlayer = ({ audioUrl, onPlayComplete }) => {
           <Typography>Loading audio...</Typography>
         </Box>
       ) : error ? (
-        <Typography color="error">{error}</Typography>
+        <Box>
+          <Typography color="error" sx={{ mb: 1 }}>{error}</Typography>
+          <Button 
+            variant="outlined" 
+            size="small" 
+            onClick={() => {
+              setError('');
+              setIsLoading(true);
+              // Try to reload the audio
+              if (audioRef.current) {
+                audioRef.current.load();
+              }
+            }}
+          >
+            Try Again
+          </Button>
+        </Box>
       ) : (
         <>
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
@@ -116,9 +171,22 @@ const AudioPlayer = ({ audioUrl, onPlayComplete }) => {
               color="primary"
               onClick={isPlaying ? pauseAudio : playAudio}
               startIcon={isPlaying ? <span>⏸</span> : <span>▶</span>}
+              sx={{ mr: 1 }}
             >
               {isPlaying ? 'Pause' : 'Play'}
             </Button>
+            
+            {/* Only show restart button if we're not at the beginning */}
+            {currentTime > 1 && (
+              <Button 
+                variant="outlined"
+                onClick={restartAudio}
+                startIcon={<span>↺</span>}
+                sx={{ mr: 1 }}
+              >
+                Restart
+              </Button>
+            )}
             
             <Box sx={{ ml: 2 }}>
               <Typography variant="body2">
@@ -127,11 +195,23 @@ const AudioPlayer = ({ audioUrl, onPlayComplete }) => {
             </Box>
           </Box>
           
-          <LinearProgress 
-            variant="determinate" 
-            value={progress} 
-            sx={{ height: 8, borderRadius: 4 }} 
-          />
+          <Box 
+            sx={{ 
+              width: '100%', 
+              height: 16, 
+              cursor: 'pointer', 
+              bgcolor: '#e0e0e0', 
+              borderRadius: 4,
+              overflow: 'hidden'
+            }}
+            onClick={handleProgressClick}
+          >
+            <LinearProgress 
+              variant="determinate" 
+              value={progress} 
+              sx={{ height: '100%', borderRadius: 4 }} 
+            />
+          </Box>
         </>
       )}
     </Box>
