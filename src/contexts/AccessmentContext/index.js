@@ -1,4 +1,4 @@
-// src/contexts/AssessmentContext.jsx
+// src/contexts/AccessmentContext/index.js
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { 
   fetchQuestions, 
@@ -18,8 +18,9 @@ export const AssessmentProvider = ({ children }) => {
   const [participantId, setParticipantId] = useState(localStorage.getItem('participantId') || null);
   const [assessmentStatus, setAssessmentStatus] = useState('not_started');
   const [recordings, setRecordings] = useState([]);
+  const [language, setLanguage] = useState(localStorage.getItem('assessmentLanguage') || 'english');
 
-  // Load questions and assessment status when participantId changes
+  // Load questions and assessment status when participantId or language changes
   useEffect(() => {
     if (participantId) {
       localStorage.setItem('participantId', participantId);
@@ -27,8 +28,8 @@ export const AssessmentProvider = ({ children }) => {
       const loadAssessmentData = async () => {
         setLoading(true);
         try {
-          // Load questions
-          let questionData = await fetchQuestions();
+          // Load questions filtered by language
+          let questionData = await fetchQuestions(language);
           
           // Sort questions by sequenceId if available, otherwise fallback to index
           if (questionData && questionData.length > 0) {
@@ -72,14 +73,22 @@ export const AssessmentProvider = ({ children }) => {
       
       loadAssessmentData();
     }
-  }, [participantId]);
+  }, [participantId, language]);
 
-  const startAssessment = async (id) => {
+  // Set language preference
+  const setLanguagePreference = (newLanguage) => {
+    setLanguage(newLanguage);
+    localStorage.setItem('assessmentLanguage', newLanguage);
+  };
+
+  const startAssessment = async (id, selectedLanguage = language) => {
     // Save to localStorage immediately to prevent race conditions
     localStorage.setItem('participantId', id);
+    localStorage.setItem('assessmentLanguage', selectedLanguage);
     
     // Update state immediately
     setParticipantId(id);
+    setLanguage(selectedLanguage);
     setAssessmentStatus('in_progress');
     setCurrentQuestionIndex(0);
     
@@ -119,6 +128,19 @@ export const AssessmentProvider = ({ children }) => {
 
   const addRecording = (recording) => {
     setRecordings([...recordings, recording]);
+  };
+
+  const resetAssessment = () => {
+    // Clear participant ID from localStorage
+    localStorage.removeItem('participantId');
+    
+    // Reset all state
+    setParticipantId(null);
+    setAssessmentStatus('not_started');
+    setCurrentQuestionIndex(0);
+    setRecordings([]);
+    
+    console.log('Assessment state has been reset');
   };
 
   // Filter questions by audio type
@@ -168,6 +190,7 @@ export const AssessmentProvider = ({ children }) => {
         participantId,
         assessmentStatus,
         recordings,
+        language,
         instructionQuestions,
         practiceQuestions,
         testQuestions,
@@ -176,7 +199,9 @@ export const AssessmentProvider = ({ children }) => {
         completeAssessment,
         addRecording,
         getProgress,
-        getPhaseProgress
+        getPhaseProgress,
+        setLanguagePreference,
+        resetAssessment
       }}
     >
       {children}

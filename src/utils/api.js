@@ -8,6 +8,20 @@ const api = axios.create({
   baseURL: API_URL
 });
 
+api.interceptors.request.use(
+  config => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`;
+      config.headers['x-auth-token'] = token;
+    }
+    return config;
+  },
+  error => {
+    return Promise.reject(error);
+  }
+);
+
 // Mock data to use if API calls fail
 const MOCK_QUESTIONS = [
   {
@@ -99,15 +113,18 @@ const safeLocalStorage = {
 };
 
 // Fetch all questions from the backend
-export const fetchQuestions = async () => {
+// Fetch all questions from the backend
+export const fetchQuestions = async (language = 'english') => {
   try {
-    console.log('Fetching questions from API...');
+    console.log(`Fetching ${language} questions from API...`);
     
     // Try to call the real API first
     try {
-      const response = await api.get('/questions');
+      const response = await api.get('/questions', {
+        params: { language }
+      });
       if (response.data && response.data.length > 0) {
-        console.log(`Retrieved ${response.data.length} questions from API`);
+        console.log(`Retrieved ${response.data.length} ${language} questions from API`);
         return response.data;
       }
     } catch (apiError) {
@@ -115,19 +132,141 @@ export const fetchQuestions = async () => {
     }
     
     // If API call fails or returns empty, use mock data
-    console.log('Using mock questions:', MOCK_QUESTIONS);
+    const MOCK_QUESTIONS = createMockQuestions(language);
+    console.log(`Using mock ${language} questions:`, MOCK_QUESTIONS);
     return MOCK_QUESTIONS;
   } catch (error) {
     console.error('Error fetching questions:', error);
     // Even if everything fails, still return mock data to keep app functioning
-    return MOCK_QUESTIONS;
+    return createMockQuestions(language);
   }
 };
 
-// Upload a recording to the backend
-export const uploadRecording = async ({ questionId, participantId, audioBlob, duration }) => {
+// Create mock questions based on language
+function createMockQuestions(language) {
+  // Create translations for mock questions
+  const translations = {
+    english: {
+      instruction: {
+        text: "Instructions",
+        instructions: "Please listen to these instructions carefully."
+      },
+      practice: [
+        {
+          text: "Practice 1",
+          instructions: "This is a practice question. Please respond to familiarize yourself with the recording system."
+        },
+        {
+          text: "Practice 2",
+          instructions: "This is a practice question. Please respond to familiarize yourself with the recording system."
+        }
+      ],
+      test: [
+        {
+          text: "Question 1",
+          instructions: "Listen carefully and speak clearly into the microphone."
+        },
+        {
+          text: "Question 2",
+          instructions: "Listen carefully and speak clearly into the microphone."
+        },
+        {
+          text: "Question 3",
+          instructions: "Listen carefully and speak clearly into the microphone."
+        }
+      ]
+    },
+    chinese: {
+      instruction: {
+        text: "指示",
+        instructions: "请仔细听这些指示。"
+      },
+      practice: [
+        {
+          text: "练习 1",
+          instructions: "这是一个练习问题。请回答以熟悉录音系统。"
+        },
+        {
+          text: "练习 2",
+          instructions: "这是一个练习问题。请回答以熟悉录音系统。"
+        }
+      ],
+      test: [
+        {
+          text: "问题 1",
+          instructions: "请仔细听并清晰地对着麦克风说话。"
+        },
+        {
+          text: "问题 2",
+          instructions: "请仔细听并清晰地对着麦克风说话。"
+        },
+        {
+          text: "问题 3",
+          instructions: "请仔细听并清晰地对着麦克风说话。"
+        }
+      ]
+    }
+  };
+  
+  // Use English as fallback if the requested language is not available
+  const t = translations[language] || translations.english;
+  
+  // Create mock questions array
+  const questions = [
+    // Instruction
+    {
+      _id: `instruction-1-${language}`,
+      questionNumber: 0,
+      text: t.instruction.text,
+      instructions: t.instruction.instructions,
+      audioPromptUrl: `https://example.com/prompts/${language}/M_Instruction.mp3`,
+      audioPromptStoragePath: `prompts/${language}_sentences/M_Instruction.mp3`,
+      category: "instruction",
+      audioType: "instruction",
+      requiresRecording: false,
+      language: language
+    }
+  ];
+  
+  // Add practice questions
+  t.practice.forEach((practice, i) => {
+    questions.push({
+      _id: `practice-${i+1}-${language}`,
+      questionNumber: i+1,
+      text: practice.text,
+      instructions: practice.instructions,
+      audioPromptUrl: `https://example.com/prompts/${language}/M_Practice ${i+1}.mp3`,
+      audioPromptStoragePath: `prompts/${language}_sentences/M_Practice ${i+1}.mp3`,
+      category: "practice",
+      audioType: "practice",
+      requiresRecording: true,
+      language: language
+    });
+  });
+  
+  // Add test questions
+  t.test.forEach((test, i) => {
+    questions.push({
+      _id: `test-${i+1}-${language}`,
+      questionNumber: i+1,
+      text: test.text,
+      instructions: test.instructions,
+      audioPromptUrl: `https://example.com/prompts/${language}/M_TS${i+1}.wav`,
+      audioPromptStoragePath: `prompts/${language}_sentences/M_TS${i+1}.wav`,
+      category: "test",
+      audioType: "test",
+      requiresRecording: true,
+      language: language
+    });
+  });
+  
+  return questions;
+}
+
+// Upload a recording to the backend with language metadata
+export const uploadRecording = async ({ questionId, participantId, audioBlob, duration, language = 'english' }) => {
   try {
-    console.log('Uploading recording:', { questionId, participantId, duration });
+    console.log('Uploading recording:', { questionId, participantId, duration, language });
     
     // Try to use the real API first
     try {
@@ -136,6 +275,7 @@ export const uploadRecording = async ({ questionId, participantId, audioBlob, du
       formData.append('questionId', questionId);
       formData.append('participantId', participantId);
       formData.append('duration', duration || 0);
+      formData.append('language', language); // Add language parameter
       
       const response = await api.post('/recordings', formData, {
         headers: {
@@ -154,6 +294,7 @@ export const uploadRecording = async ({ questionId, participantId, audioBlob, du
       questionId,
       participantId,
       duration,
+      language,
       audioUrl: URL.createObjectURL(audioBlob) || 'https://example.com/mock-recording.wav',
       timestamp: new Date().toISOString()
     };
@@ -173,7 +314,8 @@ export const uploadRecording = async ({ questionId, participantId, audioBlob, du
       success: true, 
       recording: { 
         _id: `error_recording_${Date.now()}`,
-        audioUrl: 'https://example.com/error-recording.wav'
+        audioUrl: 'https://example.com/error-recording.wav',
+        language: language
       }
     };
   }
@@ -277,27 +419,164 @@ export const updateAssessmentStatus = async (participantId, status, lastQuestion
   }
 };
 
-// Get all recordings for a participant
+// Fetch all participants
+export const fetchAllParticipants = async () => {
+  try {
+    console.log('Fetching all participants');
+    
+    // Check if we have an auth token
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.warn('No authentication token found. Please log in first.');
+      return [];
+    }
+    
+    // Try to use the real API
+    try {
+      const response = await api.get('/participants');
+      if (response.data) {
+        console.log(`Retrieved ${response.data.length} participants from API`);
+        return response.data;
+      }
+    } catch (apiError) {
+      console.error('API participants fetch failed:', apiError);
+      
+      // If unauthorized, redirect to login
+      if (apiError.response && apiError.response.status === 401) {
+        console.warn('Authentication failed. Redirecting to login...');
+        // Use window.location to redirect to login page
+        // window.location.href = '/login';
+        
+        // Return empty array to prevent further errors
+        return [];
+      }
+      
+      console.warn('Using mock data instead');
+    }
+    
+    // Mock data as fallback (same as before)
+    const mockParticipants = [
+      // Your mock data here
+    ];
+    
+    console.log('Using mock participants data:', mockParticipants);
+    return mockParticipants;
+  } catch (error) {
+    console.error('Error fetching participants:', error);
+    return [];
+  }
+};
+
+// Get recordings for a specific participant
 export const getRecordingsByParticipant = async (participantId) => {
   try {
-    console.log('Fetching recordings for participant:', participantId);
+    console.log(`Fetching recordings for participant: ${participantId}`);
     
     // Try to use the real API first
     try {
       const response = await api.get(`/recordings/participant/${participantId}`);
       if (response.data) {
+        console.log(`Retrieved ${response.data.length} recordings from API`);
         return response.data;
       }
     } catch (apiError) {
-      console.warn('API recordings fetch failed, using memory store:', apiError);
+      console.warn('API recordings fetch failed, using mock data:', apiError);
     }
     
-    // Return recordings from memory store
-    if (inMemoryStore.participantData[participantId]?.recordings) {
-      return inMemoryStore.participantData[participantId].recordings;
+    // If API call fails, use mock data based on participant ID
+    // This creates different mock data for different participant IDs
+    const mockQuestionsBase = [
+      {
+        _id: 'instruction-1',
+        text: "Instructions",
+        category: "instruction"
+      },
+      {
+        _id: 'practice-1',
+        text: "Practice Question 1",
+        category: "practice"
+      },
+      {
+        _id: 'practice-2',
+        text: "Practice Question 2",
+        category: "practice"
+      },
+      {
+        _id: 'test-1',
+        text: "Test Question 1",
+        category: "test"
+      },
+      {
+        _id: 'test-2',
+        text: "Test Question 2",
+        category: "test"
+      },
+      {
+        _id: 'test-3',
+        text: "Test Question 3",
+        category: "test"
+      }
+    ];
+    
+    const mockRecordings = [];
+    
+    // Base timestamp (now minus 7 days)
+    const baseTimestamp = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    
+    // Generate different sets of mock recordings based on participant ID
+    if (participantId === 'P001') {
+      // Completed all questions
+      mockQuestionsBase.forEach((question, index) => {
+        const timestamp = baseTimestamp + index * 5 * 60 * 1000; // 5 mins between recordings
+        
+        mockRecordings.push({
+          _id: `recording_${participantId}_${question._id}`,
+          participantId,
+          questionId: question,
+          audioUrl: 'https://example.com/mockrecording.wav',
+          durationMs: Math.floor(Math.random() * 20000) + 5000, // 5-25 seconds
+          createdAt: new Date(timestamp).toISOString()
+        });
+      });
+    } else if (participantId === 'P002') {
+      // Only completed first 3 questions
+      mockQuestionsBase.slice(0, 3).forEach((question, index) => {
+        const timestamp = baseTimestamp + index * 5 * 60 * 1000; // 5 mins between recordings
+        
+        mockRecordings.push({
+          _id: `recording_${participantId}_${question._id}`,
+          participantId,
+          questionId: question,
+          audioUrl: 'https://example.com/mockrecording.wav',
+          durationMs: Math.floor(Math.random() * 20000) + 5000, // 5-25 seconds
+          createdAt: new Date(timestamp).toISOString()
+        });
+      });
+    } else if (participantId === 'P003') {
+      // No recordings
+    } else {
+      // For any other participant ID, generate random recordings
+      const numRecordings = Math.floor(Math.random() * 6) + 1; // 1-6 recordings
+      
+      for (let i = 0; i < numRecordings; i++) {
+        const question = mockQuestionsBase[i];
+        if (!question) break;
+        
+        const timestamp = baseTimestamp + i * 5 * 60 * 1000; // 5 mins between recordings
+        
+        mockRecordings.push({
+          _id: `recording_${participantId}_${question._id}`,
+          participantId,
+          questionId: question,
+          audioUrl: 'https://example.com/mockrecording.wav',
+          durationMs: Math.floor(Math.random() * 20000) + 5000, // 5-25 seconds
+          createdAt: new Date(timestamp).toISOString()
+        });
+      }
     }
     
-    return [];
+    console.log(`Generated ${mockRecordings.length} mock recordings for ${participantId}`);
+    return mockRecordings;
   } catch (error) {
     console.error('Error fetching recordings:', error);
     return [];

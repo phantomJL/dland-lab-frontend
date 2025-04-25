@@ -1,12 +1,20 @@
-// src/pages/Completion.jsx
+// src/pages/Completion/index.js
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Container, Paper, Typography, Button, Box } from '@mui/material';
 import { useAssessment } from '../../contexts/AccessmentContext';
 
 const Completion = () => {
-  const { participantId } = useAssessment();
+  const { participantId, resetAssessment } = useAssessment();
   const navigate = useNavigate();
+  
+  const handleReturnHome = () => {
+    // Reset the assessment completely
+    resetAssessment();
+    
+    // Navigate to home
+    navigate('/', { replace: true });
+  };
   
   return (
     <Container maxWidth="md">
@@ -27,7 +35,7 @@ const Completion = () => {
           <Button 
             variant="contained" 
             color="primary"
-            onClick={() => navigate('/')}
+            onClick={handleReturnHome}
           >
             Return to Home
           </Button>

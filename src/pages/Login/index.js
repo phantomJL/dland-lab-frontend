@@ -1,8 +1,11 @@
-// src/pages/Login.jsx
+// src/pages/Login/index.js
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Container, Paper, TextField, Button, Typography, Box, Alert } from '@mui/material';
 import { useAuth } from '../../contexts/AuthContext';
+import axios from 'axios';
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -22,10 +25,42 @@ const Login = () => {
     setLoading(true);
     
     try {
+      // First try to authenticate with the real API
+      try {
+        const response = await axios.post(`${API_URL}/auth/login`, {
+          email,
+          password
+        });
+        
+        // If successful, save token and user data
+        if (response.data && response.data.token) {
+          localStorage.setItem('token', response.data.token);
+          localStorage.setItem('user', JSON.stringify(response.data.user));
+          
+          // Update auth context
+          await login(email, password, response.data);
+          
+          // Navigate to dashboard
+          navigate(from, { replace: true });
+          return;
+        }
+      } catch (apiError) {
+        console.error('API login failed:', apiError);
+        
+        // If it's a 400 error, it means invalid credentials
+        if (apiError.response && apiError.response.status === 400) {
+          throw new Error(apiError.response.data.message || 'Invalid credentials');
+        }
+        
+        // For other errors, we'll fall back to mock login
+        console.warn('Falling back to mock login');
+      }
+      
+      // Fall back to mock login if API fails
       await login(email, password);
       navigate(from, { replace: true });
     } catch (err) {
-      setError('Failed to log in. Please check your credentials.');
+      setError(err.message || 'Failed to log in. Please check your credentials.');
     } finally {
       setLoading(false);
     }

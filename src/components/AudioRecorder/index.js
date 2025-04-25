@@ -1,4 +1,4 @@
-// src/components/AudioRecorder.jsx
+// src/components/AudioRecorder/index.js
 import React, { useState, useRef, useEffect } from 'react';
 import { Button, CircularProgress, Box, Typography, LinearProgress } from '@mui/material';
 import { uploadRecording } from '../../utils/api';
@@ -19,6 +19,11 @@ const AudioRecorder = ({ questionId, onRecordingComplete }) => {
   const audioChunksRef = useRef([]);
   const timerRef = useRef(null);
   
+  // Reset state when questionId changes
+  useEffect(() => {
+    resetRecorderState();
+  }, [questionId]);
+  
   // Clean up when component unmounts
   useEffect(() => {
     return () => {
@@ -34,12 +39,43 @@ const AudioRecorder = ({ questionId, onRecordingComplete }) => {
     };
   }, [audioURL]);
   
+  // Function to reset all recorder state 
+  const resetRecorderState = () => {
+    // Stop any ongoing recording
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+      
+      // Release microphone
+      const tracks = mediaRecorderRef.current.stream.getTracks();
+      tracks.forEach(track => track.stop());
+    }
+    
+    // Clear timer if running
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    
+    // Reset all state variables
+    setIsRecording(false);
+    setRecordingTime(0);
+    setAudioBlob(null);
+    if (audioURL) {
+      URL.revokeObjectURL(audioURL);
+    }
+    setAudioURL('');
+    setIsUploading(false);
+    setUploadProgress(0);
+    setUploadError('');
+    
+    // Reset audio chunks
+    audioChunksRef.current = [];
+  };
+  
   const startRecording = async () => {
     try {
-      audioChunksRef.current = [];
-      setAudioBlob(null);
-      setAudioURL('');
-      setUploadError('');
+      // Reset state first
+      resetRecorderState();
       
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorderRef.current = new MediaRecorder(stream);
@@ -104,10 +140,13 @@ const AudioRecorder = ({ questionId, onRecordingComplete }) => {
         });
       }, 200);
       
+      // Create a proper filename for the recording
+      const filename = `recording_${participantId}_${questionId}_${Date.now()}.wav`;
+      
       const response = await uploadRecording({
         questionId,
         participantId,
-        audioBlob,
+        audioBlob: new File([audioBlob], filename, { type: 'audio/wav' }),
         duration: recordingTime * 1000 // Convert to milliseconds
       });
       
@@ -124,10 +163,15 @@ const AudioRecorder = ({ questionId, onRecordingComplete }) => {
       // Wait a moment to show 100% completion
       setTimeout(() => {
         setIsUploading(false);
-        onRecordingComplete(response.recording);
+        
+        // Notify parent component of completion
+        if (onRecordingComplete) {
+          onRecordingComplete(response.recording);
+        }
       }, 500);
       
     } catch (error) {
+      console.error('Upload error:', error);
       setUploadError(`Upload failed: ${error.message || 'Unknown error'}`);
       setIsUploading(false);
     }
