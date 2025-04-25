@@ -1,6 +1,6 @@
 // src/components/AudioRecorder.jsx
 import React, { useState, useRef, useEffect } from 'react';
-import { Button, LinearProgress, Box, Typography } from '@mui/material';
+import { Button, CircularProgress, Box, Typography, LinearProgress } from '@mui/material';
 import { uploadRecording } from '../../utils/api';
 import { useAssessment } from '../../contexts/AccessmentContext';
 
@@ -162,7 +162,6 @@ const AudioRecorder = ({ questionId, onRecordingComplete }) => {
                 variant="contained" 
                 color="error" 
                 onClick={stopRecording}
-                startIcon={<span>■</span>}
               >
                 Stop Recording
               </Button>
@@ -172,7 +171,6 @@ const AudioRecorder = ({ questionId, onRecordingComplete }) => {
               variant="contained" 
               color="primary" 
               onClick={startRecording}
-              startIcon={<span>●</span>}
             >
               Start Recording
             </Button>

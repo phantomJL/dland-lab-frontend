@@ -1,105 +1,10 @@
-// // src/contexts/AssessmentContext.jsx
-// import React, { createContext, useState, useContext, useEffect } from 'react';
-// import { fetchQuestions, getAssessmentStatus } from '../../utils/api';
-
-// const AssessmentContext = createContext();
-
-// export const useAssessment = () => useContext(AssessmentContext);
-
-// export const AssessmentProvider = ({ children }) => {
-//   const [questions, setQuestions] = useState([]);
-//   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-//   const [loading, setLoading] = useState(true);
-//   const [error, setError] = useState(null);
-//   const [participantId, setParticipantId] = useState(localStorage.getItem('participantId') || null);
-//   const [assessmentStatus, setAssessmentStatus] = useState('not_started'); // not_started, in_progress, completed
-//   const [recordings, setRecordings] = useState([]);
-
-//   useEffect(() => {
-//     if (participantId) {
-//       localStorage.setItem('participantId', participantId);
-      
-//       // Load assessment status
-//       const loadStatus = async () => {
-//         try {
-//           const status = await getAssessmentStatus(participantId);
-//           setAssessmentStatus(status.status);
-          
-//           if (status.lastQuestionIndex !== undefined) {
-//             setCurrentQuestionIndex(status.lastQuestionIndex);
-//           }
-//         } catch (err) {
-//           console.error("Error loading assessment status:", err);
-//         }
-//       };
-      
-//       loadStatus();
-      
-//       // Load questions
-//       const loadQuestions = async () => {
-//         setLoading(true);
-//         try {
-//           const data = await fetchQuestions();
-//           setQuestions(data);
-//           setError(null);
-//         } catch (err) {
-//           setError('Failed to load questions. Please try again.');
-//           console.error(err);
-//         } finally {
-//           setLoading(false);
-//         }
-//       };
-      
-//       loadQuestions();
-//     }
-//   }, [participantId]);
-
-//   const startAssessment = (id) => {
-//     setParticipantId(id);
-//     setAssessmentStatus('in_progress');
-//     setCurrentQuestionIndex(0);
-//   };
-
-//   const goToNextQuestion = () => {
-//     if (currentQuestionIndex < questions.length - 1) {
-//       setCurrentQuestionIndex(currentQuestionIndex + 1);
-//       return true;
-//     }
-//     return false;
-//   };
-
-//   const completeAssessment = () => {
-//     setAssessmentStatus('completed');
-//   };
-
-//   const addRecording = (recording) => {
-//     setRecordings([...recordings, recording]);
-//   };
-
-//   return (
-//     <AssessmentContext.Provider
-//       value={{
-//         questions,
-//         currentQuestionIndex,
-//         currentQuestion: questions[currentQuestionIndex],
-//         totalQuestions: questions.length,
-//         loading,
-//         error,
-//         participantId,
-//         assessmentStatus,
-//         recordings,
-//         startAssessment,
-//         goToNextQuestion,
-//         completeAssessment,
-//         addRecording
-//       }}
-//     >
-//       {children}
-//     </AssessmentContext.Provider>
-//   );
-// };
 // src/contexts/AssessmentContext.jsx
 import React, { createContext, useState, useContext, useEffect } from 'react';
+import { 
+  fetchQuestions, 
+  getAssessmentStatus, 
+  updateAssessmentStatus 
+} from '../../utils/api';
 
 const AssessmentContext = createContext();
 
@@ -111,45 +16,80 @@ export const AssessmentProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [participantId, setParticipantId] = useState(localStorage.getItem('participantId') || null);
-  const [assessmentStatus, setAssessmentStatus] = useState('not_started'); // not_started, in_progress, completed
+  const [assessmentStatus, setAssessmentStatus] = useState('not_started');
   const [recordings, setRecordings] = useState([]);
 
+  // Load questions and assessment status when participantId changes
   useEffect(() => {
-    // Load fake data immediately
-    const loadFakeData = () => {
-      // Create 32 fake questions
-      const fakeQuestions = Array.from({ length: 32 }, (_, i) => ({
-        id: i + 1,
-        text: `Question ${i + 1}: Please describe what you hear in this audio clip.`,
-        audioPromptUrl: 'https://file-examples.com/storage/fe8c7eef0c6364f6c9504cc/2017/11/file_example_MP3_700KB.mp3', // Using a sample MP3 file
-        instructions: 'Listen carefully and speak clearly into the microphone.'
-      }));
+    if (participantId) {
+      localStorage.setItem('participantId', participantId);
       
-      setQuestions(fakeQuestions);
-      setLoading(false);
-    };
-    
-    // Call the function with a small delay to simulate API call
-    setTimeout(loadFakeData, 500);
-  }, []);
+      const loadAssessmentData = async () => {
+        setLoading(true);
+        try {
+          // Load questions
+          const questionData = await fetchQuestions();
+          setQuestions(questionData);
+          
+          // Load assessment status
+          if (participantId) {
+            const status = await getAssessmentStatus(participantId);
+            setAssessmentStatus(status.status || 'not_started');
+            
+            if (status.lastQuestionIndex !== undefined) {
+              setCurrentQuestionIndex(status.lastQuestionIndex);
+            }
+          }
+          
+          setError(null);
+        } catch (err) {
+          setError('Failed to load assessment data. Please try again.');
+          console.error(err);
+        } finally {
+          setLoading(false);
+        }
+      };
+      
+      loadAssessmentData();
+    }
+  }, [participantId]);
 
-  const startAssessment = (id) => {
+  const startAssessment = async (id) => {
     setParticipantId(id);
     setAssessmentStatus('in_progress');
     setCurrentQuestionIndex(0);
-    localStorage.setItem('participantId', id);
+    
+    try {
+      await updateAssessmentStatus(id, 'in_progress', 0);
+    } catch (err) {
+      console.error('Error starting assessment:', err);
+    }
   };
 
-  const goToNextQuestion = () => {
+  const goToNextQuestion = async () => {
     if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex(currentQuestionIndex + 1);
+      const nextIndex = currentQuestionIndex + 1;
+      setCurrentQuestionIndex(nextIndex);
+      
+      try {
+        await updateAssessmentStatus(participantId, 'in_progress', nextIndex);
+      } catch (err) {
+        console.error('Error updating question index:', err);
+      }
+      
       return true;
     }
     return false;
   };
 
-  const completeAssessment = () => {
+  const completeAssessment = async () => {
     setAssessmentStatus('completed');
+    
+    try {
+      await updateAssessmentStatus(participantId, 'completed', currentQuestionIndex);
+    } catch (err) {
+      console.error('Error completing assessment:', err);
+    }
   };
 
   const addRecording = (recording) => {
