@@ -89,6 +89,7 @@ const MOCK_QUESTIONS = [
 // Track assessment state in memory if localStorage fails
 const inMemoryStore = {
   participantData: {},  // Store data by participant ID
+  participantInfo: {}   // Store demographic data by participant ID
 };
 
 // Create error-tolerant localStorage functions
@@ -112,7 +113,6 @@ const safeLocalStorage = {
   }
 };
 
-// Fetch all questions from the backend
 // Fetch all questions from the backend
 export const fetchQuestions = async (language = 'english') => {
   try {
@@ -263,7 +263,7 @@ function createMockQuestions(language) {
   return questions;
 }
 
-// Updated uploadRecording function for src/utils/api.js
+// Upload recording
 export const uploadRecording = async ({ questionId, participantId, audioBlob, duration, language = 'english', testIndex = 0 }) => {
   try {
     console.log('Uploading recording:', { 
@@ -399,10 +399,17 @@ export const getAssessmentStatus = async (participantId, language = 'english', t
   }
 };
 
-// Update assessment status with language and test index
-export const updateAssessmentStatus = async (participantId, status, lastQuestionIndex, language = 'english', testIndex = 0) => {
+// Update assessment status with language, test index, and demographic info
+export const updateAssessmentStatus = async (participantId, status, lastQuestionIndex, language = 'english', testIndex = 0, participantData = null) => {
   try {
-    console.log('Updating assessment status:', { participantId, status, lastQuestionIndex, language, testIndex });
+    console.log('Updating assessment status:', { 
+      participantId, 
+      status, 
+      lastQuestionIndex, 
+      language, 
+      testIndex, 
+      participantData
+    });
     
     // Create the status object
     const statusData = { 
@@ -412,6 +419,11 @@ export const updateAssessmentStatus = async (participantId, status, lastQuestion
       language, 
       testIndex
     };
+    
+    // Add demographic data if provided
+    if (participantData) {
+      statusData.participantData = participantData;
+    }
     
     // Try to use the real API first
     try {
@@ -443,57 +455,56 @@ export const updateAssessmentStatus = async (participantId, status, lastQuestion
   }
 };
 
-// Get all assessments for a participant
-export const getParticipantAssessments = async (participantId) => {
+// Update participant demographic information
+export const updateParticipantInfo = async (participantId, demographicInfo) => {
   try {
-    console.log(`Fetching assessments for participant: ${participantId}`);
+    console.log('Updating participant info:', { participantId, ...demographicInfo });
+    
+    // Create the participant data object
+    const participantData = { 
+      participantId,
+      ...demographicInfo
+    };
     
     // Try to use the real API first
     try {
-      const response = await api.get(`/assessments/participant/${participantId}`);
+      const response = await api.post('/participants/update', participantData);
+      
       if (response.data) {
-        console.log(`Retrieved ${response.data.length} assessments from API`);
+        console.log('Participant info updated via API');
         return response.data;
       }
     } catch (apiError) {
-      console.warn('API assessments fetch failed, using mock data:', apiError);
+      console.warn('API participant update failed, using local storage:', apiError);
     }
     
-    // If API call fails, create mock assessments
-    const mockAssessments = [
-      {
-        participantId,
-        language: 'english',
-        testIndex: 0,
-        status: 'in_progress',
-        startedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-        lastQuestionIndex: 2,
-        totalQuestions: 6,
-        totalRecordings: 3,
-        completionPercentage: 50
-      }
-    ];
-    
-    // Check if we have Chinese language preference stored
-    const hasChinesePref = localStorage.getItem('assessmentLanguage') === 'chinese';
-    if (hasChinesePref) {
-      mockAssessments.push({
-        participantId,
-        language: 'chinese',
-        testIndex: 0,
-        status: 'not_started',
-        lastQuestionIndex: 0,
-        totalQuestions: 6,
-        totalRecordings: 0,
-        completionPercentage: 0
-      });
+    // Store in memory for persistence
+    if (!inMemoryStore.participantInfo) {
+      inMemoryStore.participantInfo = {};
     }
+    inMemoryStore.participantInfo[participantId] = {
+      ...inMemoryStore.participantInfo[participantId],
+      ...demographicInfo
+    };
     
-    console.log('Using mock assessments data:', mockAssessments);
-    return mockAssessments;
+    // Try to update localStorage
+    const storageKey = `participant_${participantId}`;
+    const existingData = safeLocalStorage.getItem(storageKey) 
+      ? JSON.parse(safeLocalStorage.getItem(storageKey)) 
+      : {};
+    
+    const updatedData = {
+      ...existingData,
+      ...demographicInfo
+    };
+    
+    safeLocalStorage.setItem(storageKey, JSON.stringify(updatedData));
+    
+    return { success: true, participant: updatedData };
   } catch (error) {
-    console.error('Error fetching participant assessments:', error);
-    return [];
+    console.error('Error updating participant info:', error);
+    // Return success even if there was an error, to keep the app functioning
+    return { success: true };
   }
 };
 
@@ -522,25 +533,150 @@ export const fetchAllParticipants = async () => {
       // If unauthorized, redirect to login
       if (apiError.response && apiError.response.status === 401) {
         console.warn('Authentication failed. Redirecting to login...');
-        // Use window.location to redirect to login page
-        // window.location.href = '/login';
-        
-        // Return empty array to prevent further errors
         return [];
       }
       
       console.warn('Using mock data instead');
     }
     
-    // Mock data as fallback (same as before)
+    // Generate mock participants with multiple language tests
     const mockParticipants = [
-      // Your mock data here
+      {
+        participantId: 'P20230401-001',
+        age: 25,
+        sex: 'female',
+        recordingCount: 12,
+        tests: [
+          {
+            language: 'english',
+            testIndex: 0,
+            status: 'completed',
+            startedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+            completedAt: new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString(),
+            completionPercentage: 100
+          },
+          {
+            language: 'chinese',
+            testIndex: 0,
+            status: 'completed',
+            startedAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
+            completedAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
+            completionPercentage: 100
+          },
+          {
+            language: 'english',
+            testIndex: 1,
+            status: 'in_progress',
+            startedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+            completionPercentage: 50
+          }
+        ]
+      },
+      {
+        participantId: 'P20230401-002',
+        age: 32,
+        sex: 'male',
+        recordingCount: 6,
+        tests: [
+          {
+            language: 'english',
+            testIndex: 0,
+            status: 'completed',
+            startedAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+            completedAt: new Date(Date.now() - 19 * 24 * 60 * 60 * 1000).toISOString(),
+            completionPercentage: 100
+          }
+        ]
+      },
+      {
+        participantId: 'P20230401-003',
+        age: 18,
+        sex: 'other',
+        recordingCount: 3,
+        tests: [
+          {
+            language: 'chinese',
+            testIndex: 0,
+            status: 'in_progress',
+            startedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+            completionPercentage: 30
+          }
+        ]
+      }
     ];
     
     console.log('Using mock participants data:', mockParticipants);
     return mockParticipants;
   } catch (error) {
     console.error('Error fetching participants:', error);
+    return [];
+  }
+};
+
+// Get all assessments for a participant
+export const getParticipantAssessments = async (participantId) => {
+  try {
+    console.log(`Fetching assessments for participant: ${participantId}`);
+    
+    // Try to use the real API first
+    try {
+      const response = await api.get(`/assessments/participant/${participantId}`);
+      if (response.data) {
+        console.log(`Retrieved ${response.data.length} assessments from API`);
+        return response.data;
+      }
+    } catch (apiError) {
+      console.warn('API assessments fetch failed, using mock data:', apiError);
+    }
+    
+    // If API call fails, create mock assessments with multiple languages
+    const mockAssessments = [];
+    
+    // Add English assessment
+    mockAssessments.push({
+      participantId,
+      language: 'english',
+      testIndex: 0,
+      status: 'in_progress',
+      startedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      lastQuestionIndex: 2,
+      totalQuestions: 6,
+      totalRecordings: 3,
+      completionPercentage: 50
+    });
+    
+    // Add Chinese assessment
+    mockAssessments.push({
+      participantId,
+      language: 'chinese',
+      testIndex: 0,
+      status: 'not_started',
+      lastQuestionIndex: 0,
+      totalQuestions: 6,
+      totalRecordings: 0,
+      completionPercentage: 0
+    });
+    
+    // Add a completed English test as well for testing
+    if (participantId === 'P20230401-001') {
+      mockAssessments.push({
+        participantId,
+        language: 'english',
+        testIndex: 1,
+        status: 'completed',
+        startedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+        completedAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
+        lastQuestionIndex: 5,
+        totalQuestions: 6,
+        totalRecordings: 6,
+        completionPercentage: 100
+      });
+    }
+    
+    console.log('Using mock assessments data:', mockAssessments);
+    return mockAssessments;
+  } catch (error) {
+    console.error('Error fetching participant assessments:', error);
     return [];
   }
 };
@@ -602,50 +738,100 @@ export const getRecordingsByParticipant = async (participantId) => {
     const baseTimestamp = Date.now() - 7 * 24 * 60 * 60 * 1000;
     
     // Generate different sets of mock recordings based on participant ID
-    if (participantId === 'P001') {
-      // Completed all questions
+    if (participantId === 'P20230401-001') {
+      // Add recordings for English tests
+      mockQuestionsBase.forEach((question, index) => {
+        const timestamp = baseTimestamp + index * 5 * 60 * 1000; // 5 mins between recordings
+        
+        // English test index 0 (completed)
+        mockRecordings.push({
+          _id: `recording_${participantId}_eng0_${question._id}`,
+          participantId,
+          questionId: question,
+          language: 'english',
+          testIndex: 0,
+          audioUrl: 'https://example.com/mockrecording.wav',
+          durationMs: Math.floor(Math.random() * 20000) + 5000, // 5-25 seconds
+          createdAt: new Date(timestamp - 20 * 24 * 60 * 60 * 1000).toISOString() // 20 days ago
+        });
+        
+        // English test index 1 (in progress)
+        if (index < 3) { // Only first 3 questions completed
+          mockRecordings.push({
+            _id: `recording_${participantId}_eng1_${question._id}`,
+            participantId,
+            questionId: question,
+            language: 'english',
+            testIndex: 1,
+            audioUrl: 'https://example.com/mockrecording.wav',
+            durationMs: Math.floor(Math.random() * 20000) + 5000, // 5-25 seconds
+            createdAt: new Date(timestamp).toISOString()
+          });
+        }
+        
+        // Chinese test index 0 (completed)
+        mockRecordings.push({
+          _id: `recording_${participantId}_chn0_${question._id}`,
+          participantId,
+          questionId: question,
+          language: 'chinese',
+          testIndex: 0,
+          audioUrl: 'https://example.com/mockrecording.wav',
+          durationMs: Math.floor(Math.random() * 20000) + 5000, // 5-25 seconds
+          createdAt: new Date(timestamp - 10 * 24 * 60 * 60 * 1000).toISOString() // 10 days ago
+        });
+      });
+    } else if (participantId === 'P20230401-002') {
+      // Only completed English test index 0
       mockQuestionsBase.forEach((question, index) => {
         const timestamp = baseTimestamp + index * 5 * 60 * 1000; // 5 mins between recordings
         
         mockRecordings.push({
-          _id: `recording_${participantId}_${question._id}`,
+          _id: `recording_${participantId}_eng0_${question._id}`,
           participantId,
           questionId: question,
+          language: 'english',
+          testIndex: 0,
           audioUrl: 'https://example.com/mockrecording.wav',
           durationMs: Math.floor(Math.random() * 20000) + 5000, // 5-25 seconds
-          createdAt: new Date(timestamp).toISOString()
+          createdAt: new Date(timestamp - 15 * 24 * 60 * 60 * 1000).toISOString() // 15 days ago
         });
       });
-    } else if (participantId === 'P002') {
-      // Only completed first 3 questions
+    } else if (participantId === 'P20230401-003') {
+      // Chinese test in progress
       mockQuestionsBase.slice(0, 3).forEach((question, index) => {
         const timestamp = baseTimestamp + index * 5 * 60 * 1000; // 5 mins between recordings
         
         mockRecordings.push({
-          _id: `recording_${participantId}_${question._id}`,
+          _id: `recording_${participantId}_chn0_${question._id}`,
           participantId,
           questionId: question,
+          language: 'chinese',
+          testIndex: 0,
           audioUrl: 'https://example.com/mockrecording.wav',
           durationMs: Math.floor(Math.random() * 20000) + 5000, // 5-25 seconds
           createdAt: new Date(timestamp).toISOString()
         });
       });
-    } else if (participantId === 'P003') {
-      // No recordings
     } else {
-      // For any other participant ID, generate random recordings
-      const numRecordings = Math.floor(Math.random() * 6) + 1; // 1-6 recordings
+      // For any other participant ID, generate some random recordings
+      // with mixed languages and test indices
+      const languages = ['english', 'chinese'];
+      const testIndices = [0, 1];
       
-      for (let i = 0; i < numRecordings; i++) {
-        const question = mockQuestionsBase[i];
-        if (!question) break;
-        
-        const timestamp = baseTimestamp + i * 5 * 60 * 1000; // 5 mins between recordings
+      // Generate 10 random recordings
+      for (let i = 0; i < 10; i++) {
+        const language = languages[Math.floor(Math.random() * languages.length)];
+        const testIndex = testIndices[Math.floor(Math.random() * testIndices.length)];
+        const question = mockQuestionsBase[Math.floor(Math.random() * mockQuestionsBase.length)];
+        const timestamp = baseTimestamp - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000; // Random time within last 30 days
         
         mockRecordings.push({
-          _id: `recording_${participantId}_${question._id}`,
+          _id: `recording_${participantId}_${language.substring(0, 3)}${testIndex}_${question._id}`,
           participantId,
           questionId: question,
+          language,
+          testIndex,
           audioUrl: 'https://example.com/mockrecording.wav',
           durationMs: Math.floor(Math.random() * 20000) + 5000, // 5-25 seconds
           createdAt: new Date(timestamp).toISOString()
@@ -653,7 +839,7 @@ export const getRecordingsByParticipant = async (participantId) => {
       }
     }
     
-    console.log(`Generated ${mockRecordings.length} mock recordings for ${participantId}`);
+    console.log(`Generated ${mockRecordings.length} mock recordings for ${participantId} with multiple languages and test indices`);
     return mockRecordings;
   } catch (error) {
     console.error('Error fetching recordings:', error);

@@ -4,7 +4,8 @@ import {
   fetchQuestions, 
   getAssessmentStatus, 
   updateAssessmentStatus,
-  getParticipantAssessments
+  getParticipantAssessments,
+  updateParticipantInfo
 } from '../../utils/api';
 
 const AssessmentContext = createContext();
@@ -23,6 +24,11 @@ export const AssessmentProvider = ({ children }) => {
   const [testIndex, setTestIndex] = useState(parseInt(localStorage.getItem('assessmentTestIndex') || '0'));
   const [participantAssessments, setParticipantAssessments] = useState([]);
   const [lookupMode, setLookupMode] = useState(false);
+  // Add demographic state
+  const [participantData, setParticipantData] = useState({
+    age: null,
+    sex: null
+  });
 
   // Load participant's assessments when participantId changes
   useEffect(() => {
@@ -47,6 +53,14 @@ export const AssessmentProvider = ({ children }) => {
           
           if (currentAssessment.lastQuestionIndex !== undefined) {
             setCurrentQuestionIndex(currentAssessment.lastQuestionIndex);
+          }
+          
+          // Set demographic data if available
+          if (currentAssessment.participantData) {
+            setParticipantData({
+              age: currentAssessment.participantData.age || null,
+              sex: currentAssessment.participantData.sex || null
+            });
           }
         } else {
           // No assessment exists yet for this language/testIndex
@@ -109,6 +123,14 @@ export const AssessmentProvider = ({ children }) => {
             // If no last question index, start from beginning
             setCurrentQuestionIndex(0);
           }
+          
+          // Get participant demographic data if available
+          if (status.participantData) {
+            setParticipantData({
+              age: status.participantData.age || null,
+              sex: status.participantData.sex || null
+            });
+          }
         }
         
         setError(null);
@@ -162,7 +184,8 @@ export const AssessmentProvider = ({ children }) => {
   };
 
   // Start a new assessment or continue existing one
-  const startAssessment = async (id, selectedLanguage = language, selectedTestIndex = testIndex) => {
+  // Updated to include demographic information
+  const startAssessment = async (id, selectedLanguage = language, selectedTestIndex = testIndex, demographicInfo = {}) => {
     // Get the participant's existing assessments first
     try {
       const existingAssessments = await getParticipantAssessments(id);
@@ -200,12 +223,50 @@ export const AssessmentProvider = ({ children }) => {
     setAssessmentStatus('in_progress');
     setCurrentQuestionIndex(0); // Always start from the first question
     
+    // Set demographic data if provided
+    if (demographicInfo && (demographicInfo.age || demographicInfo.sex)) {
+      setParticipantData({
+        age: demographicInfo.age || null,
+        sex: demographicInfo.sex || null
+      });
+    }
+    
     try {
-      // Start a new assessment
-      await updateAssessmentStatus(id, 'in_progress', 0, selectedLanguage, selectedTestIndex);
+      // Start a new assessment with demographic info
+      await updateAssessmentStatus(
+        id, 
+        'in_progress', 
+        0, 
+        selectedLanguage, 
+        selectedTestIndex, 
+        demographicInfo
+      );
+      
+      // Update participant info separately
+      if (demographicInfo && (demographicInfo.age || demographicInfo.sex)) {
+        await updateParticipantInfo(id, demographicInfo);
+      }
     } catch (err) {
       console.error('Error starting assessment:', err);
       // Even if the API call fails, we want the UI to work with local state
+    }
+  };
+
+  // Update participant demographic information
+  const updateParticipantDemographics = async (demographicInfo) => {
+    if (!participantId) return;
+    
+    try {
+      setParticipantData({
+        ...participantData,
+        ...demographicInfo
+      });
+      
+      await updateParticipantInfo(participantId, demographicInfo);
+      return true;
+    } catch (err) {
+      console.error('Error updating participant info:', err);
+      return false;
     }
   };
 
@@ -215,7 +276,14 @@ export const AssessmentProvider = ({ children }) => {
       setCurrentQuestionIndex(nextIndex);
       
       try {
-        await updateAssessmentStatus(participantId, 'in_progress', nextIndex, language, testIndex);
+        await updateAssessmentStatus(
+          participantId, 
+          'in_progress', 
+          nextIndex, 
+          language, 
+          testIndex, 
+          participantData
+        );
       } catch (err) {
         console.error('Error updating question index:', err);
       }
@@ -229,7 +297,14 @@ export const AssessmentProvider = ({ children }) => {
     setAssessmentStatus('completed');
     
     try {
-      await updateAssessmentStatus(participantId, 'completed', currentQuestionIndex, language, testIndex);
+      await updateAssessmentStatus(
+        participantId, 
+        'completed', 
+        currentQuestionIndex, 
+        language, 
+        testIndex, 
+        participantData
+      );
       
       // Refresh the list of participant assessments
       const assessments = await getParticipantAssessments(participantId);
@@ -262,6 +337,10 @@ export const AssessmentProvider = ({ children }) => {
     setParticipantAssessments([]);
     setLookupMode(false);
     setTestIndex(0);
+    setParticipantData({
+      age: null,
+      sex: null
+    });
     
     console.log('Assessment state has been reset');
   };
@@ -320,6 +399,7 @@ export const AssessmentProvider = ({ children }) => {
         testQuestions,
         participantAssessments,
         lookupMode,
+        participantData, // Add demographic data
         startAssessment,
         goToNextQuestion,
         completeAssessment,
@@ -329,7 +409,9 @@ export const AssessmentProvider = ({ children }) => {
         setLanguagePreference,
         setTestIndexPreference,
         lookupParticipant,
-        resetAssessment
+        resetAssessment,
+        updateParticipantDemographics,
+        updateParticipantInfo
       }}
     >
       {children}

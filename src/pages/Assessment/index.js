@@ -25,7 +25,11 @@ import {
   ListItemText,
   ListItemIcon,
   Divider,
-  Alert
+  Alert,
+  MenuItem,
+  Select,
+  InputLabel,
+  Grid
 } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -56,6 +60,10 @@ const Assessment = () => {
     localStorage.getItem('assessmentLanguage') || 'english'
   );
   
+  // New state for demographic info
+  const [age, setAge] = useState('');
+  const [sex, setSex] = useState('');
+  
   const [recordingCompleted, setRecordingCompleted] = useState(false);
   const [lookupError, setLookupError] = useState('');
   
@@ -82,7 +90,8 @@ const Assessment = () => {
     resetAssessment,
     lookupParticipant,
     participantAssessments,
-    lookupMode
+    lookupMode,
+    updateParticipantInfo
   } = useAssessment();
   
   const navigate = useNavigate();
@@ -114,8 +123,11 @@ const Assessment = () => {
   const handleStartNew = (e) => {
     e.preventDefault();
     if (newId.trim()) {
-      // Start a new assessment with test index 0
-      startAssessment(newId, selectedLanguage, 0);
+      // Start a new assessment with test index 0 and demographic info
+      startAssessment(newId, selectedLanguage, 0, {
+        age: age || null,
+        sex: sex || null
+      });
     }
   };
   
@@ -239,11 +251,11 @@ const Assessment = () => {
   
   // Helper to calculate and display completion percentage
   const getCompletionStatus = (assessment) => {
-    if (assessment.status === 'completed') return '100% - Complete';
+    if (assessment.status === 'completed') return `100% - ${t.completed}`;
     if (assessment.completionPercentage !== undefined) {
-      return `${assessment.completionPercentage}% - In Progress`;
+      return `${assessment.completionPercentage}% - ${t.inProgress}`;
     }
-    return assessment.status === 'not_started' ? 'Not Started' : 'In Progress';
+    return assessment.status === 'not_started' ? t.notStarted : t.inProgress;
   };
   
   // Translations for UI elements
@@ -281,7 +293,19 @@ const Assessment = () => {
       progress: "Progress",
       language: "Language",
       testNumber: "Test #",
-      noTests: "No tests found for this participant ID"
+      noTests: "No tests found for this participant ID",
+      completed: "Completed",
+      inProgress: "In Progress",
+      notStarted: "Not Started",
+      // New translations for demographic info
+      ageLabel: "Your age:",
+      sexLabel: "Your sex:",
+      male: "Male",
+      female: "Female",
+      other: "Other",
+      preferNotToSay: "Prefer not to say",
+      demographicInfo: "Your Information",
+      demographicHelp: "This information helps our researchers better understand language development across different groups."
     },
     chinese: {
       welcome: "一起来学习!",
@@ -316,7 +340,19 @@ const Assessment = () => {
       progress: "进度",
       language: "语言",
       testNumber: "测试 #",
-      noTests: "找不到此参与者ID的测试"
+      noTests: "找不到此参与者ID的测试",
+      completed: "已完成",
+      inProgress: "进行中",
+      notStarted: "未开始",
+      // New translations for demographic info
+      ageLabel: "您的年龄:",
+      sexLabel: "您的性别:",
+      male: "男",
+      female: "女",
+      other: "其他",
+      preferNotToSay: "不愿透露",
+      demographicInfo: "您的信息",
+      demographicHelp: "这些信息帮助我们的研究人员更好地了解不同群体的语言发展。"
     }
   };
   
@@ -366,6 +402,14 @@ const Assessment = () => {
     tab: {
       fontWeight: 600,
       fontSize: '1rem'
+    },
+    demographicSection: {
+      mt: 4,
+      mb: 4,
+      p: 3,
+      border: '1px solid #e0e0e0',
+      borderRadius: 2,
+      bgcolor: '#f9f9f9'
     }
   };
   
@@ -491,6 +535,65 @@ const Assessment = () => {
                     />
                   </RadioGroup>
                 </FormControl>
+              </Box>
+              
+              {/* NEW: Demographic information section */}
+              <Box sx={styles.demographicSection}>
+                <Typography 
+                  sx={{ 
+                    color: '#5783A9', 
+                    fontWeight: 500,
+                    fontSize: '1.1rem', 
+                    mb: 2
+                  }}
+                >
+                  {t.demographicInfo}
+                </Typography>
+                
+                <Typography variant="body2" color="text.secondary" paragraph>
+                  {t.demographicHelp}
+                </Typography>
+                
+                <Grid container spacing={3}>
+                  <Grid item xs={12} md={6}>
+                    <FormControl fullWidth variant="outlined" sx={{ mb: 2 }}>
+                      <InputLabel id="age-select-label">{t.ageLabel}</InputLabel>
+                      <Select
+                        labelId="age-select-label"
+                        id="age-select"
+                        value={age}
+                        onChange={(e) => setAge(e.target.value)}
+                        label={t.ageLabel}
+                      >
+                        <MenuItem value=""><em>Select age</em></MenuItem>
+                        {[...Array(100)].map((_, i) => (
+                          <MenuItem key={i} value={i+1}>
+                            {i+1}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  
+                  <Grid item xs={12} md={6}>
+                    <FormControl fullWidth variant="outlined">
+                      <InputLabel id="sex-select-label">{t.sexLabel}</InputLabel>
+                      <Select
+                        labelId="sex-select-label"
+                        id="sex-select"
+                        value={sex}
+                        onChange={(e) => setSex(e.target.value)}
+                        label={t.sexLabel}
+                      >
+                        <MenuItem value=""><em>Select sex</em></MenuItem>
+                        <MenuItem value="male">{t.male}</MenuItem>
+                        <MenuItem value="female">{t.female}</MenuItem>
+                        <MenuItem value="other">{t.other}</MenuItem>
+                        <MenuItem value="prefer_not_to_say">{t.preferNotToSay}</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                </Grid>
               </Box>
               
               {/* Participant ID and start button */}
@@ -642,40 +745,23 @@ const Assessment = () => {
                       {t.startNewIn}:
                     </Typography>
                     
-                    <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
-                      {/* Check if participant has an English test already */}
-                      {!participantAssessments.some(a => a.language === 'english' && a.status !== 'completed') && (
-                        <Button
-                          variant="outlined"
-                          startIcon={<LanguageIcon />}
-                          onClick={() => handleStartNewLanguage('english')}
-                        >
-                          English
-                        </Button>
-                      )}
-                      
-                      {/* Check if participant has a Chinese test already */}
-                      {!participantAssessments.some(a => a.language === 'chinese' && a.status !== 'completed') && (
-                        <Button
-                          variant="outlined"
-                          startIcon={<LanguageIcon />}
-                          onClick={() => handleStartNewLanguage('chinese')}
-                        >
-                          中文 (Chinese)
-                        </Button>
-                      )}
-                      
-                      {/* Start a new test in the same language */}
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mt: 2 }}>
+                      {/* English test option - show even if in progress, will create a new test index */}
                       <Button
                         variant="outlined"
-                        startIcon={<AddCircleIcon />}
-                        onClick={() => handleStartNewLanguage(
-                          participantAssessments[0]?.language || 'english'
-                        )}
+                        startIcon={<span role="img" aria-label="flag" style={{ fontSize: '1.2rem' }}>🇺🇸</span>}
+                        onClick={() => handleStartNewLanguage('english')}
                       >
-                        {participantAssessments[0]?.language === 'chinese' 
-                          ? '新的中文测试' 
-                          : 'New English Test'}
+                        English
+                      </Button>
+                      
+                      {/* Chinese test option - show even if in progress */}
+                      <Button
+                        variant="outlined"
+                        startIcon={<span role="img" aria-label="flag" style={{ fontSize: '1.2rem' }}>🇨🇳</span>}
+                        onClick={() => handleStartNewLanguage('chinese')}
+                      >
+                        中文 (Chinese)
                       </Button>
                     </Box>
                   </Box>

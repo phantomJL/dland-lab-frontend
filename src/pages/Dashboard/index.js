@@ -189,18 +189,52 @@ const Dashboard = () => {
     }).format(date);
   };
   
-  // Calculate completion status
-  const getCompletionStatus = (participant) => {
-    if (!participant.assessment) return 'Not Started';
+  // Format sex values for display
+  const formatSex = (sex) => {
+    if (!sex) return 'Not provided';
     
-    switch (participant.assessment.status) {
-      case 'completed':
-        return 'Completed';
-      case 'in_progress':
-        return 'In Progress';
-      default:
-        return 'Not Started';
+    const sexMapping = {
+      'male': 'Male',
+      'female': 'Female',
+      'other': 'Other',
+      'prefer_not_to_say': 'Prefer not to say'
+    };
+    
+    return sexMapping[sex] || sex;
+  };
+  
+  // Get latest completion status for a participant with multiple tests
+  const getLatestCompletionStatus = (participant) => {
+    if (!participant.tests || participant.tests.length === 0) {
+      return 'Not Started';
     }
+    
+    // Check if any tests are in progress
+    const hasInProgress = participant.tests.some(test => test.status === 'in_progress');
+    if (hasInProgress) return 'In Progress';
+    
+    // Check if all tests are completed
+    const allCompleted = participant.tests.every(test => test.status === 'completed');
+    if (allCompleted) return 'Completed';
+    
+    return 'Mixed';
+  };
+  
+  // Get the earliest start date from all tests
+  const getFirstStartedDate = (participant) => {
+    if (!participant.tests || participant.tests.length === 0) {
+      return null;
+    }
+    
+    // Find the earliest startedAt date from all tests
+    const startDates = participant.tests
+      .filter(test => test.startedAt)
+      .map(test => new Date(test.startedAt).getTime());
+    
+    if (startDates.length === 0) return null;
+    
+    const earliestDate = new Date(Math.min(...startDates));
+    return formatDate(earliestDate.toISOString());
   };
   
   // Get color for status chip
@@ -210,30 +244,11 @@ const Dashboard = () => {
         return 'success';
       case 'In Progress':
         return 'warning';
+      case 'Mixed':
+        return 'info';
       default:
         return 'default';
     }
-  };
-  
-  // Get language display name
-  const getLanguageDisplay = (language) => {
-    return language === 'chinese' ? '中文 (Chinese)' : 'English';
-  };
-  
-  // Calculate test progress
-  const calculateTestProgress = (testData) => {
-    if (!testData) return 0;
-    
-    // Count recordings by category
-    let totalRecordings = 0;
-    let totalQuestions = 10; // Default for estimation
-    
-    Object.keys(testData.categories || {}).forEach(category => {
-      totalRecordings += testData.categories[category].length;
-    });
-    
-    // Calculate progress percentage
-    return Math.round((totalRecordings / totalQuestions) * 100);
   };
   
   // Dashboard overview tab
@@ -261,7 +276,7 @@ const Dashboard = () => {
               </Typography>
               <Typography variant="h3">
                 {participants.filter(p => 
-                  p.assessment && p.assessment.status === 'completed'
+                  getLatestCompletionStatus(p) === 'Completed'
                 ).length}
               </Typography>
             </CardContent>
@@ -276,7 +291,7 @@ const Dashboard = () => {
               </Typography>
               <Typography variant="h3">
                 {participants.filter(p => 
-                  p.assessment && p.assessment.status === 'in_progress'
+                  getLatestCompletionStatus(p) === 'In Progress'
                 ).length}
               </Typography>
             </CardContent>
@@ -302,10 +317,10 @@ const Dashboard = () => {
                 <TableRow>
                   <TableCell>ID</TableCell>
                   <TableCell>Age</TableCell>
-                  <TableCell>Gender</TableCell>
-                  <TableCell>Language</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Started</TableCell>
+                  <TableCell>Sex</TableCell>
+                  <TableCell>Tests</TableCell>
+                  <TableCell>Latest Status</TableCell>
+                  <TableCell>First Started</TableCell>
                   <TableCell>Recordings</TableCell>
                   <TableCell>Actions</TableCell>
                 </TableRow>
@@ -322,19 +337,30 @@ const Dashboard = () => {
                     <TableRow key={participant.participantId}>
                       <TableCell>{participant.participantId}</TableCell>
                       <TableCell>{participant.age || 'N/A'}</TableCell>
-                      <TableCell>{participant.gender || 'N/A'}</TableCell>
-                      <TableCell>{participant.language || 'N/A'}</TableCell>
+                      <TableCell>{formatSex(participant.sex) || 'N/A'}</TableCell>
+                      <TableCell>
+                        {participant.tests ? (
+                          <Box sx={{ display: 'flex', gap: 0.5 }}>
+                            {participant.tests.map(test => (
+                              <Chip 
+                                key={`${test.language}-${test.testIndex}`}
+                                size="small"
+                                label={`${test.language === 'chinese' ? '🇨🇳' : '🇺🇸'} #${test.testIndex + 1}`}
+                                sx={{ mr: 0.5 }}
+                              />
+                            ))}
+                          </Box>
+                        ) : 'N/A'}
+                      </TableCell>
                       <TableCell>
                         <Chip 
-                          label={getCompletionStatus(participant)} 
-                          color={getStatusColor(getCompletionStatus(participant))}
+                          label={getLatestCompletionStatus(participant)} 
+                          color={getStatusColor(getLatestCompletionStatus(participant))}
                           size="small"
                         />
                       </TableCell>
                       <TableCell>
-                        {participant.assessment && participant.assessment.startedAt 
-                          ? formatDate(participant.assessment.startedAt) 
-                          : 'N/A'}
+                        {getFirstStartedDate(participant) || 'N/A'}
                       </TableCell>
                       <TableCell>{participant.recordingCount || 0}</TableCell>
                       <TableCell>
@@ -381,29 +407,44 @@ const Dashboard = () => {
                 </Typography>
               </Grid>
               <Grid item xs={12} md={6}>
-                <Typography variant="subtitle2">Status</Typography>
+                <Typography variant="subtitle2">Latest Status</Typography>
                 <Chip 
-                  label={getCompletionStatus(selectedParticipant)} 
-                  color={getStatusColor(getCompletionStatus(selectedParticipant))}
+                  label={getLatestCompletionStatus(selectedParticipant)} 
+                  color={getStatusColor(getLatestCompletionStatus(selectedParticipant))}
                 />
               </Grid>
-              <Grid item xs={12} md={4}>
+              <Grid item xs={12} md={6}>
                 <Typography variant="subtitle2">Age</Typography>
                 <Typography variant="body1">
                   {selectedParticipant.age || 'Not provided'}
                 </Typography>
               </Grid>
-              <Grid item xs={12} md={4}>
-                <Typography variant="subtitle2">Gender</Typography>
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle2">Sex</Typography>
                 <Typography variant="body1">
-                  {selectedParticipant.gender || 'Not provided'}
+                  {formatSex(selectedParticipant.sex) || 'Not provided'}
                 </Typography>
               </Grid>
-              <Grid item xs={12} md={4}>
-                <Typography variant="subtitle2">Language</Typography>
-                <Typography variant="body1">
-                  {selectedParticipant.language || 'Not provided'}
-                </Typography>
+              <Grid item xs={12}>
+                <Typography variant="subtitle2" gutterBottom>Language Tests</Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  {selectedParticipant.tests && selectedParticipant.tests.length > 0 ? (
+                    selectedParticipant.tests.map(test => (
+                      <Chip 
+                        key={`${test.language}-${test.testIndex}`}
+                        label={`${test.language === 'chinese' ? '中文' : 'English'} - Test #${test.testIndex + 1}`}
+                        icon={test.language === 'chinese' ? <span>🇨🇳</span> : <span>🇺🇸</span>}
+                        variant={test.status === 'completed' ? 'default' : 'outlined'}
+                        color={test.status === 'completed' ? 'success' : 'primary'}
+                        sx={{ mr: 1, mb: 1 }}
+                      />
+                    ))
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">
+                      No language tests taken yet
+                    </Typography>
+                  )}
+                </Box>
               </Grid>
               {selectedParticipant.notes && (
                 <Grid item xs={12}>
@@ -450,7 +491,7 @@ const Dashboard = () => {
                       >
                         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
                           <Typography variant="body2">
-                            {getLanguageDisplay(test.language)} - Test #{test.testIndex + 1}
+                            {test.language === 'chinese' ? '中文 (Chinese)' : 'English'} - Test #{test.testIndex + 1}
                           </Typography>
                           <Typography variant="caption" color="textSecondary">
                             Progress: {progressPercentage}%
@@ -490,7 +531,7 @@ const Dashboard = () => {
                 {participantRecordings[selectedTest] && (
                   <Box>
                     <Typography variant="subtitle1" sx={{ mb: 2 }}>
-                      {getLanguageDisplay(participantRecordings[selectedTest].language)} - 
+                      {participantRecordings[selectedTest].language === 'chinese' ? '中文 (Chinese)' : 'English'} - 
                       Test #{participantRecordings[selectedTest].testIndex + 1}
                     </Typography>
                     
@@ -720,6 +761,22 @@ const Dashboard = () => {
       )}
     </Box>
   );
+  
+  // Calculate test progress
+  const calculateTestProgress = (testData) => {
+    if (!testData) return 0;
+    
+    // Count recordings by category
+    let totalRecordings = 0;
+    let totalQuestions = 10; // Default for estimation
+    
+    Object.keys(testData.categories || {}).forEach(category => {
+      totalRecordings += testData.categories[category].length;
+    });
+    
+    // Calculate progress percentage
+    return Math.round((totalRecordings / totalQuestions) * 100);
+  };
   
   return (
     <Container>
