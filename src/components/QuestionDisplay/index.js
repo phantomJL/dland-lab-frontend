@@ -1,8 +1,18 @@
-// src/components/QuestionDisplay/index.js
 import React from 'react';
 import { Paper, Typography, Box, Chip } from '@mui/material';
 
 const QuestionDisplay = ({ questionNumber, questionText, instructions, category }) => {
+  // Determine the display title based on category and number
+  let displayTitle = '';
+  
+  if (category === 'instruction') {
+    displayTitle = 'Instructions';
+  } else if (category === 'practice') {
+    displayTitle = `Practice ${questionNumber || ''}`;
+  } else {
+    displayTitle = `Question ${questionNumber || ''}`;
+  }
+  
   // Determine the colors based on category
   const colors = {
     instruction: {
@@ -19,49 +29,14 @@ const QuestionDisplay = ({ questionNumber, questionText, instructions, category 
     }
   }[category] || { bg: '#f8f9fa', chip: '#9BBDB1' };
   
-  // Check if we should display the content at all
-  const shouldDisplay = () => {
-    // Don't show if both text and instructions are generic/redundant
-    const isGenericText = 
-      questionText === 'Instructions' || 
-      questionText === 'Practice' || 
-      questionText === `Practice ${questionNumber}` ||
-      questionText === `Question ${questionNumber}` ||
-      questionText === 'Listen to the instructions';
-    
-    const isGenericInstruction = 
-      !instructions || 
-      instructions === 'Please listen to these instructions carefully.' ||
-      instructions === 'This is a practice question. Please respond to familiarize yourself with the recording system.' ||
-      instructions === 'Listen carefully and speak clearly into the microphone.';
-    
-    return !(isGenericText && isGenericInstruction);
-  };
-  
-  // If there's nothing meaningful to display, return null
-  if (!shouldDisplay()) {
-    return null;
-  }
-  
-  // Get a friendly display title if needed
-  const getFriendlyTitle = () => {
-    // Don't show redundant titles
-    if (questionText === 'Instructions' || 
-        questionText === `Practice ${questionNumber}` ||
-        questionText === `Question ${questionNumber}`) {
-      return null;
-    }
-    
-    return questionText;
-  };
-  
-  const friendlyTitle = getFriendlyTitle();
-  
   return (
     <Paper elevation={1} sx={{ p: 3, mb: 3, backgroundColor: colors.bg, borderRadius: '12px' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: friendlyTitle ? 2 : 0 }}>
-        {/* Only show chip, no title text in the header */}
-        <Box sx={{ flex: 1 }}></Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: category === 'instruction' ? 0 : 2 }}>
+        {category !== 'instruction' && (
+          <Typography variant="h6">
+            {displayTitle}
+          </Typography>
+        )}
         
         {category && (
           <Chip 
@@ -76,18 +51,19 @@ const QuestionDisplay = ({ questionNumber, questionText, instructions, category 
         )}
       </Box>
       
-      {/* Only show the title text if it's not redundant */}
-      {friendlyTitle && (
+      {/* Only show the text if it's not redundant with the title */}
+      {(category !== 'instruction' || questionText !== 'Instructions') && (
         <Typography variant="body1" paragraph>
-          {friendlyTitle}
+          {questionText}
         </Typography>
       )}
       
       {/* Only show instructions box if there are meaningful instructions */}
-      {instructions && instructions !== 'Please listen to these instructions carefully.' && 
-       instructions !== 'This is a practice question. Please respond to familiarize yourself with the recording system.' &&
-       instructions !== 'Listen carefully and speak clearly into the microphone.' && (
+      {instructions && instructions !== 'Please listen to these instructions carefully.' && (
         <Box sx={{ mt: 2, p: 2, backgroundColor: 'rgba(0,0,0,0.03)', borderRadius: 1 }}>
+          <Typography variant="subtitle2" color="text.secondary" fontWeight="bold" gutterBottom>
+            Instructions:
+          </Typography>
           <Typography variant="body2" color="text.secondary">
             {instructions}
           </Typography>

@@ -14,6 +14,7 @@ import {
   Step,
   StepLabel,
   FormControl,
+  FormLabel,
   RadioGroup,
   FormControlLabel,
   Radio
@@ -34,7 +35,9 @@ const generateParticipantId = () => {
 const Assessment = () => {
   const [id, setId] = useState(generateParticipantId());
   const [recordingCompleted, setRecordingCompleted] = useState(false);
-  const [language, setLanguage] = useState(localStorage.getItem('assessmentLanguage') || 'english');
+  const [selectedLanguage, setSelectedLanguage] = useState(
+    localStorage.getItem('assessmentLanguage') || 'english'
+  );
   
   const { 
     startAssessment, 
@@ -47,13 +50,14 @@ const Assessment = () => {
     participantId,
     goToNextQuestion,
     completeAssessment,
-    assessmentPhase,
+    language,
+    setLanguagePreference,
     instructionQuestions,
     practiceQuestions,
     testQuestions,
     getProgress,
     getPhaseProgress,
-    setLanguagePreference
+    resetAssessment
   } = useAssessment();
   
   const navigate = useNavigate();
@@ -61,6 +65,7 @@ const Assessment = () => {
   // Reset recording completed state when question changes
   useEffect(() => {
     setRecordingCompleted(false);
+    console.log(assessmentStatus === 'not_started' || !participantId)
   }, [currentQuestionIndex]);
   
   // Auto-complete recording for questions that don't require recording
@@ -72,22 +77,21 @@ const Assessment = () => {
   
   const handleLanguageChange = (event) => {
     const newLanguage = event.target.value;
-    setLanguage(newLanguage);
+    setSelectedLanguage(newLanguage);
     localStorage.setItem('assessmentLanguage', newLanguage);
   };
   
   const handleStart = (e) => {
     e.preventDefault();
     if (id.trim()) {
-      // Store ID and language in localStorage
+      // Store ID in localStorage to persist between page reloads
       localStorage.setItem('participantId', id);
-      localStorage.setItem('assessmentLanguage', language);
       
-      // Pass the language to the assessment context
-      setLanguagePreference(language);
+      // Set the language preference in context
+      setLanguagePreference(selectedLanguage);
       
-      // Start the assessment
-      startAssessment(id, language);
+      // Start the assessment with selected language
+      startAssessment(id, selectedLanguage);
     }
   };
   
@@ -131,7 +135,7 @@ const Assessment = () => {
       index: currentPhaseIndex + 1
     };
   };
-
+  
   // Translations for UI elements
   const translations = {
     english: {
@@ -140,7 +144,7 @@ const Assessment = () => {
       codeLabel: "Your special code:",
       codeHelp: "This code helps us keep track of your answers. You can write it down if you need to take a break and come back later!",
       startButton: "Let's Begin! 🎮",
-      languageSelect: "Select Language:",
+      languageLabel: "Choose your language:",
       english: "English",
       chinese: "中文 (Chinese)",
       loading: "Loading our fun activities...",
@@ -163,7 +167,7 @@ const Assessment = () => {
       codeLabel: "你的特别代码:",
       codeHelp: "这个代码帮助我们跟踪你的答案。如果你需要休息并稍后回来，可以把它写下来！",
       startButton: "开始吧! 🎮",
-      languageSelect: "选择语言:",
+      languageLabel: "选择你的语言:",
       english: "English (英语)",
       chinese: "中文",
       loading: "正在加载有趣的活动...",
@@ -181,9 +185,12 @@ const Assessment = () => {
       of: "/"
     }
   };
-
-  // Get translations for current language
-  const t = translations[language] || translations.english;
+  
+  // Get translations for selected language (for start page)
+  const t = translations[selectedLanguage] || translations.english;
+  
+  // Get translations for current assessment language (for questions)
+  const currentT = translations[language] || translations.english;
   
   // Custom styles
   const styles = {
@@ -215,9 +222,9 @@ const Assessment = () => {
       boxShadow: '0 4px 8px rgba(155, 189, 177, 0.3)'
     },
     languageSelector: {
-      mt: 3,
-      mb: 3,
-      p: 2,
+      mt: 4,
+      mb: 4,
+      p: 3,
       border: '1px solid #e0e0e0',
       borderRadius: 2,
       bgcolor: '#f9f9f9'
@@ -256,8 +263,7 @@ const Assessment = () => {
       </Container>
     );
   }
-  
-  // If assessment hasn't started yet, show the participant ID input
+  // If assessment hasn't started yet, show the start page with language selection
   if (assessmentStatus === 'not_started' || !participantId) {
     return (
       <Container maxWidth="md" sx={styles.container}>
@@ -273,32 +279,66 @@ const Assessment = () => {
             {t.intro}
           </Typography>
           
-          {/* Language selector */}
+          {/* Language selection */}
           <Box sx={styles.languageSelector}>
-            <Typography variant="subtitle1" sx={{ mb: 1, color: '#5783A9', fontWeight: 500 }}>
-              {t.languageSelect}
-            </Typography>
             <FormControl component="fieldset">
+              <FormLabel 
+                component="legend" 
+                sx={{ 
+                  color: '#5783A9', 
+                  fontWeight: 500,
+                  fontSize: '1.1rem', 
+                  mb: 2
+                }}
+              >
+                {t.languageLabel}
+              </FormLabel>
+              
               <RadioGroup
-                row
-                name="language"
-                value={language}
+                value={selectedLanguage}
                 onChange={handleLanguageChange}
+                sx={{
+                  display: 'flex',
+                  flexDirection: 'row',
+                  gap: 4
+                }}
               >
                 <FormControlLabel 
                   value="english" 
-                  control={<Radio color="primary" />} 
-                  label={t.english} 
+                  control={<Radio sx={{ color: '#5783A9' }} />} 
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <span role="img" aria-label="flag" style={{ marginRight: '8px', fontSize: '1.5rem' }}>🇺🇸</span>
+                      <Typography>{t.english}</Typography>
+                    </Box>
+                  }
+                  sx={{ 
+                    p: 1, 
+                    border: selectedLanguage === 'english' ? '2px solid #9BBDB1' : '2px solid transparent',
+                    borderRadius: 2
+                  }}
                 />
+                
                 <FormControlLabel 
                   value="chinese" 
-                  control={<Radio color="primary" />} 
-                  label={t.chinese} 
+                  control={<Radio sx={{ color: '#5783A9' }} />} 
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <span role="img" aria-label="flag" style={{ marginRight: '8px', fontSize: '1.5rem' }}>🇨🇳</span>
+                      <Typography>{t.chinese}</Typography>
+                    </Box>
+                  }
+                  sx={{ 
+                    p: 1, 
+                    border: selectedLanguage === 'chinese' ? '2px solid #9BBDB1' : '2px solid transparent',
+                    borderRadius: 2
+                  }}
                 />
               </RadioGroup>
             </FormControl>
           </Box>
           
+          {/* Participant ID and start button */}
           <Box component="form" onSubmit={handleStart} sx={{ mt: 4, maxWidth: '500px', mx: 'auto' }}>
             <Typography variant="subtitle1" align="left" gutterBottom sx={{ color: '#5783A9' }}>
               {t.codeLabel}
@@ -343,23 +383,22 @@ const Assessment = () => {
   // Determine animal emoji based on phase
   const animalEmoji = currentQuestion?.audioType === 'instruction' ? '🦊' : 
                      currentQuestion?.audioType === 'practice' ? '🐰' : '🐢';
-                     
+  // Get phase-specific question count
+  const phaseInfo = getPhaseInfo();      
+
   // Determine button text based on phase
   const nextButtonText = currentQuestionIndex === totalQuestions - 1 
-                        ? t.finish
+                        ? currentT.finish
                         : currentQuestion?.audioType === 'instruction' 
-                          ? t.letsPractice
+                          ? currentT.letsPractice
                           : currentQuestion?.audioType === 'practice' && testQuestions.length > 0 && phaseInfo.index === phaseInfo.count
-                            ? t.startActivities
-                            : t.next;
+                            ? currentT.startActivities
+                            : currentT.next;
   
   // Determine the active step for the stepper
   const activeStep = currentQuestion?.audioType === 'instruction' ? 0 : 
                      currentQuestion?.audioType === 'practice' ? 1 : 2;
-                     
-  // Get phase-specific question count
-  const phaseInfo = getPhaseInfo();
-  
+
   // Determine if recording is required for the current question
   const recordingRequired = currentQuestion?.requiresRecording !== false;
   
@@ -367,7 +406,7 @@ const Assessment = () => {
   return (
     <Container maxWidth="md" sx={styles.container}>
       <Paper elevation={3} sx={styles.paper}>
-        {/* Simple header with animal emoji and participant code */}
+        {/* Header with language indicator, animal emoji and participant code */}
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <span role="img" aria-label="animal" style={{ fontSize: '2rem' }}>
@@ -377,7 +416,24 @@ const Assessment = () => {
               variant="body2" 
               sx={{ ml: 2, color: '#666' }}
             >
-              {t.code} {participantId}
+              {currentT.code} {participantId}
+            </Typography>
+          </Box>
+          
+          {/* Language indicator */}
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center',
+            px: 2,
+            py: 0.5,
+            borderRadius: 4,
+            bgcolor: '#f0f7ff'
+          }}>
+            <span role="img" aria-label="flag" style={{ marginRight: '4px' }}>
+              {language === 'chinese' ? '🇨🇳' : '🇺🇸'}
+            </span>
+            <Typography variant="body2" sx={{ color: '#5783A9', fontWeight: 500 }}>
+              {language === 'chinese' ? '中文' : 'English'}
             </Typography>
           </Box>
           
@@ -394,7 +450,7 @@ const Assessment = () => {
                 fontWeight: 500
               }}
             >
-              {phaseInfo.index} {t.of} {phaseInfo.count}
+              {phaseInfo.index} {currentT.of} {phaseInfo.count}
             </Typography>
           )}
         </Box>
@@ -403,13 +459,13 @@ const Assessment = () => {
         <Box sx={{ mb: 4 }}>
           <Stepper activeStep={activeStep} alternativeLabel>
             <Step>
-              <StepLabel sx={styles.stepLabel}>{t.listen}</StepLabel>
+              <StepLabel sx={styles.stepLabel}>{currentT.listen}</StepLabel>
             </Step>
             <Step>
-              <StepLabel sx={styles.stepLabel}>{t.practice}</StepLabel>
+              <StepLabel sx={styles.stepLabel}>{currentT.practice}</StepLabel>
             </Step>
             <Step>
-              <StepLabel sx={styles.stepLabel}>{t.answer}</StepLabel>
+              <StepLabel sx={styles.stepLabel}>{currentT.answer}</StepLabel>
             </Step>
           </Stepper>
         </Box>
@@ -450,7 +506,7 @@ const Assessment = () => {
                 fontWeight: 500  
               }}>
                 <span role="img" aria-label="headphones" style={{ marginRight: '8px', fontSize: '1.2rem' }}>🎧</span>
-                {t.listenCarefully}
+                {currentT.listenCarefully}
               </Typography>
               <AudioPlayer 
                 audioUrl={currentQuestion.audioPromptUrl} 

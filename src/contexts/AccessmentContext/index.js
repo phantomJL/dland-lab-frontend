@@ -20,61 +20,63 @@ export const AssessmentProvider = ({ children }) => {
   const [recordings, setRecordings] = useState([]);
   const [language, setLanguage] = useState(localStorage.getItem('assessmentLanguage') || 'english');
 
-  // Load questions and assessment status when participantId or language changes
   useEffect(() => {
-    if (participantId) {
-      localStorage.setItem('participantId', participantId);
+  // Set loading to false if there's no participantId
+  if (!participantId) {
+    setLoading(false);
+    return; // Exit early
+  }
+  
+  localStorage.setItem('participantId', participantId);
+  
+  const loadAssessmentData = async () => {
+    setLoading(true);
+    try {
+      // Load questions filtered by language
+      let questionData = await fetchQuestions(language);
       
-      const loadAssessmentData = async () => {
-        setLoading(true);
-        try {
-          // Load questions filtered by language
-          let questionData = await fetchQuestions(language);
-          
-          // Sort questions by sequenceId if available, otherwise fallback to index
-          if (questionData && questionData.length > 0) {
-            if (questionData[0].sequenceId !== undefined) {
-              questionData = questionData.sort((a, b) => a.sequenceId - b.sequenceId);
-            }
-            
-            setQuestions(questionData);
-          } else {
-            setQuestions([]);
-          }
-          
-          // Load assessment status
-          if (participantId) {
-            const status = await getAssessmentStatus(participantId);
-            setAssessmentStatus(status.status || 'not_started');
-            
-            if (status.lastQuestionIndex !== undefined) {
-              // Validate that index is within bounds
-              if (status.lastQuestionIndex >= 0 && status.lastQuestionIndex < questionData.length) {
-                setCurrentQuestionIndex(status.lastQuestionIndex);
-              } else {
-                // If index is out of bounds, reset to beginning
-                console.warn('Last question index out of bounds, resetting to 0');
-                setCurrentQuestionIndex(0);
-              }
-            } else {
-              // If no last question index, start from beginning
-              setCurrentQuestionIndex(0);
-            }
-          }
-          
-          setError(null);
-        } catch (err) {
-          console.error('Error loading assessment data:', err);
-          setError('Failed to load assessment data. Please try again.');
-        } finally {
-          setLoading(false);
+      // Sort questions by sequenceId if available, otherwise fallback to index
+      if (questionData && questionData.length > 0) {
+        if (questionData[0].sequenceId !== undefined) {
+          questionData = questionData.sort((a, b) => a.sequenceId - b.sequenceId);
         }
-      };
+        
+        setQuestions(questionData);
+      } else {
+        setQuestions([]);
+      }
       
-      loadAssessmentData();
+      // Load assessment status
+      if (participantId) {
+        const status = await getAssessmentStatus(participantId);
+        setAssessmentStatus(status.status || 'not_started');
+        
+        if (status.lastQuestionIndex !== undefined) {
+          // Validate that index is within bounds
+          if (status.lastQuestionIndex >= 0 && status.lastQuestionIndex < questionData.length) {
+            setCurrentQuestionIndex(status.lastQuestionIndex);
+          } else {
+            // If index is out of bounds, reset to beginning
+            console.warn('Last question index out of bounds, resetting to 0');
+            setCurrentQuestionIndex(0);
+          }
+        } else {
+          // If no last question index, start from beginning
+          setCurrentQuestionIndex(0);
+        }
+      }
+      
+      setError(null);
+    } catch (err) {
+      console.error('Error loading assessment data:', err);
+      setError('Failed to load assessment data. Please try again.');
+    } finally {
+      setLoading(false);
     }
-  }, [participantId, language]);
-
+  };
+  
+  loadAssessmentData();
+}, [participantId, language]);
   // Set language preference
   const setLanguagePreference = (newLanguage) => {
     setLanguage(newLanguage);
