@@ -1,6 +1,8 @@
 // src/components/AudioPlayer/index.js
 import React, { useState, useRef, useEffect } from 'react';
 import { Box, Button, LinearProgress, CircularProgress, Typography } from '@mui/material';
+import { getTranslation } from '../../utils/translationService';
+import { useAssessment } from '../../contexts/AccessmentContext';
 
 const AudioPlayer = ({ audioUrl, onPlayComplete, autoPlay = false }) => {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -10,6 +12,8 @@ const AudioPlayer = ({ audioUrl, onPlayComplete, autoPlay = false }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [hasPlayed, setHasPlayed] = useState(false);
+  
+  const { language } = useAssessment();
   
   const audioRef = useRef(null);
   const progressIntervalRef = useRef(null);
@@ -30,7 +34,7 @@ const AudioPlayer = ({ audioUrl, onPlayComplete, autoPlay = false }) => {
       
       const handleError = (e) => {
         console.error('Audio error:', e);
-        setError('Error loading audio file. Please try refreshing the page.');
+        setError(getTranslation('errorLoadingAudio', language));
         setIsLoading(false);
       };
       
@@ -55,7 +59,7 @@ const AudioPlayer = ({ audioUrl, onPlayComplete, autoPlay = false }) => {
         }
       };
     }
-  }, [autoPlay, hasPlayed, onPlayComplete]);
+  }, [autoPlay, hasPlayed, onPlayComplete, language]);
   
   useEffect(() => {
     // Reset state when audio URL changes
@@ -92,7 +96,7 @@ const AudioPlayer = ({ audioUrl, onPlayComplete, autoPlay = false }) => {
           })
           .catch(error => {
             console.error('Error playing audio:', error);
-            setError('Could not play audio. Please check your browser permissions.');
+            setError(getTranslation('errorLoadingAudio', language));
           });
       }
     }
@@ -135,6 +139,9 @@ const AudioPlayer = ({ audioUrl, onPlayComplete, autoPlay = false }) => {
       setProgress(clickPosition * 100);
     }
   };
+
+  // Get translations
+  const t = (key) => getTranslation(key, language);
   
   return (
     <Box className="audio-player" sx={{ mb: 3 }}>
@@ -143,7 +150,7 @@ const AudioPlayer = ({ audioUrl, onPlayComplete, autoPlay = false }) => {
       {isLoading && !error ? (
         <Box sx={{ display: 'flex', alignItems: 'center', my: 2 }}>
           <CircularProgress size={24} sx={{ mr: 2 }} />
-          <Typography>Loading audio...</Typography>
+          <Typography>{t('loadingAudio')}</Typography>
         </Box>
       ) : error ? (
         <Box>
@@ -160,7 +167,7 @@ const AudioPlayer = ({ audioUrl, onPlayComplete, autoPlay = false }) => {
               }
             }}
           >
-            Try Again
+            {t('tryAgainButton')}
           </Button>
         </Box>
       ) : (
@@ -173,7 +180,7 @@ const AudioPlayer = ({ audioUrl, onPlayComplete, autoPlay = false }) => {
               startIcon={isPlaying ? <span>⏸</span> : <span>▶</span>}
               sx={{ mr: 1 }}
             >
-              {isPlaying ? 'Pause' : 'Play'}
+              {isPlaying ? t('pause') : t('play')}
             </Button>
             
             {/* Only show restart button if we're not at the beginning */}
@@ -184,7 +191,7 @@ const AudioPlayer = ({ audioUrl, onPlayComplete, autoPlay = false }) => {
                 startIcon={<span>↺</span>}
                 sx={{ mr: 1 }}
               >
-                Restart
+                {t('restart')}
               </Button>
             )}
             

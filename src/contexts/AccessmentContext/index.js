@@ -56,11 +56,13 @@ export const AssessmentProvider = ({ children }) => {
       } catch (err) {
         console.error('Error loading participant assessments:', err);
         setError('Failed to load assessment data');
+      } finally {
+        setLoading(false);
       }
     };
     
     loadParticipantAssessments();
-  }, [participantId]);
+  }, [participantId, language, testIndex]);
 
   // Load questions when language changes or when starting a test
   useEffect(() => {
@@ -161,6 +163,31 @@ export const AssessmentProvider = ({ children }) => {
 
   // Start a new assessment or continue existing one
   const startAssessment = async (id, selectedLanguage = language, selectedTestIndex = testIndex) => {
+    // Get the participant's existing assessments first
+    try {
+      const existingAssessments = await getParticipantAssessments(id);
+      
+      // If we're in lookup mode (returning participant), always start a new test
+      if (lookupMode) {
+        // Find the highest test index for the selected language
+        const sameLanguageTests = existingAssessments.filter(
+          a => a.language === selectedLanguage
+        );
+        
+        // Determine the next test index (highest + 1, or 0 if none exist)
+        const nextTestIndex = sameLanguageTests.length > 0
+          ? Math.max(...sameLanguageTests.map(a => a.testIndex)) + 1
+          : 0;
+        
+        // Use the new test index
+        selectedTestIndex = nextTestIndex;
+        console.log(`Starting a new test with language: ${selectedLanguage}, index: ${selectedTestIndex}`);
+      }
+    } catch (err) {
+      console.error('Error getting participant assessments:', err);
+      // If there's an error, we'll still continue with the provided test index
+    }
+    
     // Save to localStorage immediately to prevent race conditions
     localStorage.setItem('participantId', id);
     localStorage.setItem('assessmentLanguage', selectedLanguage);
@@ -171,30 +198,14 @@ export const AssessmentProvider = ({ children }) => {
     setLanguage(selectedLanguage);
     setTestIndex(selectedTestIndex);
     setAssessmentStatus('in_progress');
+    setCurrentQuestionIndex(0); // Always start from the first question
     
     try {
-      // Get the existing assessment if there is one
-      const status = await getAssessmentStatus(id, selectedLanguage, selectedTestIndex);
-      
-      if (status.status === 'completed') {
-        // If assessment was already completed, start a new test with incremented testIndex
-        const newTestIndex = selectedTestIndex + 1;
-        localStorage.setItem('assessmentTestIndex', newTestIndex.toString());
-        setTestIndex(newTestIndex);
-        setCurrentQuestionIndex(0);
-        await updateAssessmentStatus(id, 'in_progress', 0, selectedLanguage, newTestIndex);
-      } else if (status.status === 'in_progress') {
-        // If assessment was in progress, continue from last question
-        setCurrentQuestionIndex(status.lastQuestionIndex || 0);
-      } else {
-        // Start fresh
-        setCurrentQuestionIndex(0);
-        await updateAssessmentStatus(id, 'in_progress', 0, selectedLanguage, selectedTestIndex);
-      }
+      // Start a new assessment
+      await updateAssessmentStatus(id, 'in_progress', 0, selectedLanguage, selectedTestIndex);
     } catch (err) {
       console.error('Error starting assessment:', err);
       // Even if the API call fails, we want the UI to work with local state
-      setCurrentQuestionIndex(0);
     }
   };
 

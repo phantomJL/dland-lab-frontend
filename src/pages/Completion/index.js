@@ -3,10 +3,14 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Container, Paper, Typography, Button, Box } from '@mui/material';
 import { useAssessment } from '../../contexts/AccessmentContext';
+import { getTranslation } from '../../utils/translationService';
 
 const Completion = () => {
-  const { participantId, resetAssessment } = useAssessment();
+  const { participantId, resetAssessment, language } = useAssessment();
   const navigate = useNavigate();
+  
+  // Get translations
+  const t = (key) => getTranslation(key, language);
   
   const handleReturnHome = () => {
     // Reset the assessment completely
@@ -20,15 +24,15 @@ const Completion = () => {
     <Container maxWidth="md">
       <Paper elevation={3} sx={{ p: 4, textAlign: 'center' }}>
         <Typography variant="h4" component="h1" gutterBottom>
-          Assessment Complete!
+          {t('assessmentComplete')}
         </Typography>
         
         <Typography variant="body1" paragraph>
-          Thank you for completing the language assessment. Your responses have been recorded.
+          {t('thankYou')}
         </Typography>
         
         <Typography variant="body2" color="text.secondary" paragraph>
-          Participant ID: {participantId}
+          {t('participantId')} {participantId}
         </Typography>
         
         <Box sx={{ mt: 4 }}>
@@ -37,7 +41,7 @@ const Completion = () => {
             color="primary"
             onClick={handleReturnHome}
           >
-            Return to Home
+            {t('returnHome')}
           </Button>
         </Box>
       </Paper>

@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Button, CircularProgress, Box, Typography, LinearProgress } from '@mui/material';
 import { uploadRecording } from '../../utils/api';
 import { useAssessment } from '../../contexts/AccessmentContext';
+import { getTranslation } from '../../utils/translationService';
 
 const AudioRecorder = ({ questionId, onRecordingComplete, language, testIndex }) => {
   const [isRecording, setIsRecording] = useState(false);
@@ -104,7 +105,7 @@ const AudioRecorder = ({ questionId, onRecordingComplete, language, testIndex })
       setIsRecording(true);
     } catch (error) {
       console.error('Error accessing microphone:', error);
-      setUploadError('Microphone access denied. Please check your browser permissions.');
+      setUploadError(getTranslation('microphoneError', language));
     }
   };
   
@@ -178,7 +179,7 @@ const AudioRecorder = ({ questionId, onRecordingComplete, language, testIndex })
       
     } catch (error) {
       console.error('Upload error:', error);
-      setUploadError(`Upload failed: ${error.message || 'Unknown error'}`);
+      setUploadError(`${getTranslation('uploadError', language)}${error.message || getTranslation('unknownError', language)}`);
       setIsUploading(false);
     }
   };
@@ -189,10 +190,13 @@ const AudioRecorder = ({ questionId, onRecordingComplete, language, testIndex })
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
   
+  // Get translations
+  const t = (key) => getTranslation(key, language);
+  
   return (
     <Box className="audio-recorder" sx={{ mt: 3, p: 2, border: '1px solid #eee', borderRadius: 2 }}>
       <Typography variant="h6" gutterBottom>
-        {!audioBlob ? 'Record your answer' : 'Review your recording'}
+        {!audioBlob ? t('recordYourAnswer') : t('reviewYourRecording')}
       </Typography>
       
       {!audioBlob ? (
@@ -213,7 +217,7 @@ const AudioRecorder = ({ questionId, onRecordingComplete, language, testIndex })
                 color="error" 
                 onClick={stopRecording}
               >
-                Stop Recording
+                {t('stopRecording')}
               </Button>
             </>
           ) : (
@@ -222,7 +226,7 @@ const AudioRecorder = ({ questionId, onRecordingComplete, language, testIndex })
               color="primary" 
               onClick={startRecording}
             >
-              Start Recording
+              {t('startRecording')}
             </Button>
           )}
         </Box>
@@ -239,7 +243,7 @@ const AudioRecorder = ({ questionId, onRecordingComplete, language, testIndex })
                 setAudioURL('');
               }}
             >
-              Discard
+              {t('discard')}
             </Button>
             
             <Button 
@@ -248,7 +252,7 @@ const AudioRecorder = ({ questionId, onRecordingComplete, language, testIndex })
               onClick={handleUpload}
               disabled={isUploading}
             >
-              {isUploading ? 'Uploading...' : 'Save & Continue'}
+              {isUploading ? t('uploading') : t('saveAndContinue')}
             </Button>
           </Box>
           

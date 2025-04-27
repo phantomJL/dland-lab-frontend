@@ -133,18 +133,43 @@ const Assessment = () => {
       if (assessments.length === 0) {
         setLookupError('No assessments found for this participant ID');
       }
+      
+      // Check if all tests are completed
+      const allCompleted = assessments.every(a => a.status === 'completed');
+      
+      // If all tests are completed, prompt the user to start a new test
+      if (allCompleted && assessments.length > 0) {
+        handleStartNewLanguage(assessments[0].language);
+      }
     } catch (err) {
       setLookupError('Error looking up participant');
     }
   };
   
+  
   const handleContinueAssessment = (assessment) => {
-    // Start the assessment with the existing language and test index
-    startAssessment(
-      assessment.participantId, 
-      assessment.language, 
-      assessment.testIndex
-    );
+    // For a completed test, always start a new test with an incremented test index
+    if (assessment.status === 'completed') {
+      // Find the highest test index for this language
+      const sameLanguageTests = participantAssessments.filter(
+        a => a.language === assessment.language
+      );
+      const nextTestIndex = Math.max(...sameLanguageTests.map(a => a.testIndex)) + 1;
+      
+      // Start a new test in the same language
+      startAssessment(
+        assessment.participantId, 
+        assessment.language, 
+        nextTestIndex
+      );
+    } else {
+      // For in-progress tests, continue from where they left off
+      startAssessment(
+        assessment.participantId, 
+        assessment.language, 
+        assessment.testIndex
+      );
+    }
   };
   
   const handleStartNewLanguage = (language) => {
@@ -761,6 +786,9 @@ const Assessment = () => {
         
         {/* Overall progress bar */}
         <Box sx={{ width: '100%', mb: 4 }}>
+          <Typography variant='body2' mb={1}>
+          {t.progress + ' ' + Math.round(getProgress()) + ' %'}
+          </Typography>
           <LinearProgress 
             variant="determinate" 
             value={getProgress()} 

@@ -23,25 +23,30 @@ import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
-  IconButton
+  IconButton,
+  ButtonGroup
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import DownloadIcon from '@mui/icons-material/Download';
+import LanguageIcon from '@mui/icons-material/Language';
+import AssessmentIcon from '@mui/icons-material/Assessment';
 import { fetchAllParticipants, getRecordingsByParticipant } from '../../utils/api';
+import { getTranslation } from '../../utils/translationService';
 
 const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [participants, setParticipants] = useState([]);
   const [selectedParticipant, setSelectedParticipant] = useState(null);
-  const [participantRecordings, setParticipantRecordings] = useState([]);
+  const [participantRecordings, setParticipantRecordings] = useState({});
   const [loadingRecordings, setLoadingRecordings] = useState(false);
   const [recordingError, setRecordingError] = useState(null);
   const [tabValue, setTabValue] = useState(0);
   const [playingAudio, setPlayingAudio] = useState(null);
   const [audioElement, setAudioElement] = useState(null);
+  const [selectedTest, setSelectedTest] = useState(null);
   
   const navigate = useNavigate();
   
@@ -85,10 +90,30 @@ const Dashboard = () => {
     setTabValue(newValue);
   };
   
+  // Helper function to group recordings by test (language + testIndex)
+  const groupRecordingsByTest = (recordings) => {
+    return recordings.reduce((acc, recording) => {
+      // Create a unique key for each test
+      const testKey = `${recording.language || 'english'}_${recording.testIndex || 0}`;
+      
+      if (!acc[testKey]) {
+        acc[testKey] = {
+          language: recording.language || 'english',
+          testIndex: recording.testIndex || 0,
+          recordings: []
+        };
+      }
+      
+      acc[testKey].recordings.push(recording);
+      return acc;
+    }, {});
+  };
+  
   // Load recordings for a participant when selected
   const handleViewParticipant = async (participant) => {
     setSelectedParticipant(participant);
     setTabValue(1); // Switch to participant tab
+    setSelectedTest(null); // Reset selected test
     
     try {
       setLoadingRecordings(true);
@@ -96,17 +121,30 @@ const Dashboard = () => {
       
       const recordings = await getRecordingsByParticipant(participant.participantId);
       
-      // Group recordings by question type
-      const groupedRecordings = recordings.reduce((acc, recording) => {
-        const category = recording.questionId?.category || 'unknown';
-        if (!acc[category]) {
-          acc[category] = [];
-        }
-        acc[category].push(recording);
-        return acc;
-      }, {});
+      // Group recordings by test first
+      const groupedByTest = groupRecordingsByTest(recordings);
       
-      setParticipantRecordings(groupedRecordings);
+      // For each test, group recordings by question type
+      Object.keys(groupedByTest).forEach(testKey => {
+        const testRecordings = groupedByTest[testKey].recordings;
+        
+        // Group by question category within each test
+        groupedByTest[testKey].categories = testRecordings.reduce((acc, recording) => {
+          const category = recording.questionId?.category || 'unknown';
+          if (!acc[category]) {
+            acc[category] = [];
+          }
+          acc[category].push(recording);
+          return acc;
+        }, {});
+      });
+      
+      setParticipantRecordings(groupedByTest);
+      
+      // Select the first test by default if there are any
+      if (Object.keys(groupedByTest).length > 0) {
+        setSelectedTest(Object.keys(groupedByTest)[0]);
+      }
     } catch (err) {
       console.error('Error loading recordings:', err);
       setRecordingError('Failed to load participant recordings.');
@@ -175,6 +213,27 @@ const Dashboard = () => {
       default:
         return 'default';
     }
+  };
+  
+  // Get language display name
+  const getLanguageDisplay = (language) => {
+    return language === 'chinese' ? '中文 (Chinese)' : 'English';
+  };
+  
+  // Calculate test progress
+  const calculateTestProgress = (testData) => {
+    if (!testData) return 0;
+    
+    // Count recordings by category
+    let totalRecordings = 0;
+    let totalQuestions = 10; // Default for estimation
+    
+    Object.keys(testData.categories || {}).forEach(category => {
+      totalRecordings += testData.categories[category].length;
+    });
+    
+    // Calculate progress percentage
+    return Math.round((totalRecordings / totalQuestions) * 100);
   };
   
   // Dashboard overview tab
@@ -357,6 +416,55 @@ const Dashboard = () => {
             </Grid>
           </Paper>
           
+          {/* Test selector */}
+          {Object.keys(participantRecordings).length > 0 && (
+            <Paper sx={{ p: 3, mb: 3 }}>
+              <Typography variant="h6" gutterBottom>
+                Tests
+              </Typography>
+              
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                  {Object.keys(participantRecordings).map(testKey => {
+                    const test = participantRecordings[testKey];
+                    const progressPercentage = calculateTestProgress(test);
+                    
+                    return (
+                      <Button 
+                        key={testKey}
+                        variant={selectedTest === testKey ? "contained" : "outlined"}
+                        onClick={() => setSelectedTest(testKey)}
+                        startIcon={
+                          <span role="img" aria-label="language">
+                            {test.language === 'chinese' ? '🇨🇳' : '🇺🇸'}
+                          </span>
+                        }
+                        sx={{ 
+                          minWidth: '200px',
+                          justifyContent: 'flex-start',
+                          borderColor: selectedTest === testKey ? 'primary.main' : '#e0e0e0',
+                          backgroundColor: selectedTest === testKey ? 'primary.main' : 
+                            progressPercentage === 100 ? '#e8f5e9' : 
+                            progressPercentage > 0 ? '#fff8e1' : 'transparent'
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                          <Typography variant="body2">
+                            {getLanguageDisplay(test.language)} - Test #{test.testIndex + 1}
+                          </Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            Progress: {progressPercentage}%
+                          </Typography>
+                        </Box>
+                      </Button>
+                    );
+                  })}
+                </Box>
+              </Box>
+            </Paper>
+          )}
+          
+          {/* Recordings for selected test */}
           <Paper sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom>
               Recordings
@@ -372,220 +480,238 @@ const Dashboard = () => {
               <Typography>
                 No recordings found for this participant.
               </Typography>
+            ) : !selectedTest ? (
+              <Typography>
+                Select a test to view recordings.
+              </Typography>
             ) : (
               <>
-                {/* Instruction recordings */}
-                {participantRecordings.instruction && (
-                  <Accordion defaultExpanded>
-                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                      <Typography variant="subtitle1">Instructions</Typography>
-                    </AccordionSummary>
-                    <AccordionDetails>
-                      <TableContainer>
-                        <Table size="small">
-                          <TableHead>
-                            <TableRow>
-                              <TableCell>Question</TableCell>
-                              <TableCell>Recorded</TableCell>
-                              <TableCell>Duration</TableCell>
-                              <TableCell>Actions</TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {participantRecordings.instruction.map(recording => (
-                              <TableRow key={recording._id}>
-                                <TableCell>
-                                  {recording.questionId?.text || 'Unknown Question'}
-                                </TableCell>
-                                <TableCell>{formatDate(recording.createdAt)}</TableCell>
-                                <TableCell>
-                                  {recording.durationMs 
-                                    ? `${Math.round(recording.durationMs / 1000)}s` 
-                                    : 'N/A'}
-                                </TableCell>
-                                <TableCell>
-                                  <IconButton 
-                                    onClick={() => handlePlayRecording(recording)}
-                                    color={playingAudio === recording._id ? "primary" : "default"}
-                                  >
-                                    {playingAudio === recording._id ? <PauseIcon /> : <PlayArrowIcon />}
-                                  </IconButton>
-                                  <IconButton 
-                                    component="a" 
-                                    href={recording.audioUrl} 
-                                    download
-                                    target="_blank"
-                                  >
-                                    <DownloadIcon />
-                                  </IconButton>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                    </AccordionDetails>
-                  </Accordion>
-                )}
-                
-                {/* Practice recordings */}
-                {participantRecordings.practice && (
-                  <Accordion defaultExpanded>
-                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                      <Typography variant="subtitle1">Practice Questions</Typography>
-                    </AccordionSummary>
-                    <AccordionDetails>
-                      <TableContainer>
-                        <Table size="small">
-                          <TableHead>
-                            <TableRow>
-                              <TableCell>Question</TableCell>
-                              <TableCell>Recorded</TableCell>
-                              <TableCell>Duration</TableCell>
-                              <TableCell>Actions</TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {participantRecordings.practice.map(recording => (
-                              <TableRow key={recording._id}>
-                                <TableCell>
-                                  {recording.questionId?.text || 'Unknown Question'}
-                                </TableCell>
-                                <TableCell>{formatDate(recording.createdAt)}</TableCell>
-                                <TableCell>
-                                  {recording.durationMs 
-                                    ? `${Math.round(recording.durationMs / 1000)}s` 
-                                    : 'N/A'}
-                                </TableCell>
-                                <TableCell>
-                                  <IconButton 
-                                    onClick={() => handlePlayRecording(recording)}
-                                    color={playingAudio === recording._id ? "primary" : "default"}
-                                  >
-                                    {playingAudio === recording._id ? <PauseIcon /> : <PlayArrowIcon />}
-                                  </IconButton>
-                                  <IconButton 
-                                    component="a" 
-                                    href={recording.audioUrl} 
-                                    download
-                                    target="_blank"
-                                  >
-                                    <DownloadIcon />
-                                  </IconButton>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                    </AccordionDetails>
-                  </Accordion>
-                )}
-                
-                {/* Test recordings */}
-                {participantRecordings.test && (
-                  <Accordion defaultExpanded>
-                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                      <Typography variant="subtitle1">Assessment Questions</Typography>
-                    </AccordionSummary>
-                    <AccordionDetails>
-                      <TableContainer>
-                        <Table size="small">
-                          <TableHead>
-                            <TableRow>
-                              <TableCell>Question</TableCell>
-                              <TableCell>Recorded</TableCell>
-                              <TableCell>Duration</TableCell>
-                              <TableCell>Actions</TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {participantRecordings.test.map(recording => (
-                              <TableRow key={recording._id}>
-                                <TableCell>
-                                  {recording.questionId?.text || 'Unknown Question'}
-                                </TableCell>
-                                <TableCell>{formatDate(recording.createdAt)}</TableCell>
-                                <TableCell>
-                                  {recording.durationMs 
-                                    ? `${Math.round(recording.durationMs / 1000)}s` 
-                                    : 'N/A'}
-                                </TableCell>
-                                <TableCell>
-                                  <IconButton 
-                                    onClick={() => handlePlayRecording(recording)}
-                                    color={playingAudio === recording._id ? "primary" : "default"}
-                                  >
-                                    {playingAudio === recording._id ? <PauseIcon /> : <PlayArrowIcon />}
-                                  </IconButton>
-                                  <IconButton 
-                                    component="a" 
-                                    href={recording.audioUrl} 
-                                    download
-                                    target="_blank"
-                                  >
-                                    <DownloadIcon />
-                                  </IconButton>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                    </AccordionDetails>
-                  </Accordion>
-                )}
-                
-                {/* Unknown type recordings (fallback) */}
-                {participantRecordings.unknown && (
-                  <Accordion defaultExpanded>
-                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                      <Typography variant="subtitle1">Other Recordings</Typography>
-                    </AccordionSummary>
-                    <AccordionDetails>
-                      <TableContainer>
-                        <Table size="small">
-                          <TableHead>
-                            <TableRow>
-                              <TableCell>Recording ID</TableCell>
-                              <TableCell>Recorded</TableCell>
-                              <TableCell>Duration</TableCell>
-                              <TableCell>Actions</TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {participantRecordings.unknown.map(recording => (
-                              <TableRow key={recording._id}>
-                                <TableCell>{recording._id}</TableCell>
-                                <TableCell>{formatDate(recording.createdAt)}</TableCell>
-                                <TableCell>
-                                  {recording.durationMs 
-                                    ? `${Math.round(recording.durationMs / 1000)}s` 
-                                    : 'N/A'}
-                                </TableCell>
-                                <TableCell>
-                                  <IconButton 
-                                    onClick={() => handlePlayRecording(recording)}
-                                    color={playingAudio === recording._id ? "primary" : "default"}
-                                  >
-                                    {playingAudio === recording._id ? <PauseIcon /> : <PlayArrowIcon />}
-                                  </IconButton>
-                                  <IconButton 
-                                    component="a" 
-                                    href={recording.audioUrl} 
-                                    download
-                                    target="_blank"
-                                  >
-                                    <DownloadIcon />
-                                  </IconButton>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                    </AccordionDetails>
-                  </Accordion>
+                {/* Display recordings for the selected test, grouped by category */}
+                {participantRecordings[selectedTest] && (
+                  <Box>
+                    <Typography variant="subtitle1" sx={{ mb: 2 }}>
+                      {getLanguageDisplay(participantRecordings[selectedTest].language)} - 
+                      Test #{participantRecordings[selectedTest].testIndex + 1}
+                    </Typography>
+                    
+                    {/* Instruction recordings */}
+                    {participantRecordings[selectedTest].categories && 
+                     participantRecordings[selectedTest].categories.instruction && (
+                      <Accordion defaultExpanded>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                          <Typography variant="subtitle1">Instructions</Typography>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                          <TableContainer>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow>
+                                  <TableCell>Question</TableCell>
+                                  <TableCell>Recorded</TableCell>
+                                  <TableCell>Duration</TableCell>
+                                  <TableCell>Actions</TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                {participantRecordings[selectedTest].categories.instruction.map(recording => (
+                                  <TableRow key={recording._id}>
+                                    <TableCell>
+                                      {recording.questionId?.text || 'Unknown Question'}
+                                    </TableCell>
+                                    <TableCell>{formatDate(recording.createdAt)}</TableCell>
+                                    <TableCell>
+                                      {recording.durationMs 
+                                        ? `${Math.round(recording.durationMs / 1000)}s` 
+                                        : 'N/A'}
+                                    </TableCell>
+                                    <TableCell>
+                                      <IconButton 
+                                        onClick={() => handlePlayRecording(recording)}
+                                        color={playingAudio === recording._id ? "primary" : "default"}
+                                      >
+                                        {playingAudio === recording._id ? <PauseIcon /> : <PlayArrowIcon />}
+                                      </IconButton>
+                                      <IconButton 
+                                        component="a" 
+                                        href={recording.audioUrl} 
+                                        download
+                                        target="_blank"
+                                      >
+                                        <DownloadIcon />
+                                      </IconButton>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        </AccordionDetails>
+                      </Accordion>
+                    )}
+                    
+                    {/* Practice recordings */}
+                    {participantRecordings[selectedTest].categories && 
+                     participantRecordings[selectedTest].categories.practice && (
+                      <Accordion defaultExpanded>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                          <Typography variant="subtitle1">Practice Questions</Typography>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                          <TableContainer>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow>
+                                  <TableCell>Question</TableCell>
+                                  <TableCell>Recorded</TableCell>
+                                  <TableCell>Duration</TableCell>
+                                  <TableCell>Actions</TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                {participantRecordings[selectedTest].categories.practice.map(recording => (
+                                  <TableRow key={recording._id}>
+                                    <TableCell>
+                                      {recording.questionId?.text || 'Unknown Question'}
+                                    </TableCell>
+                                    <TableCell>{formatDate(recording.createdAt)}</TableCell>
+                                    <TableCell>
+                                      {recording.durationMs 
+                                        ? `${Math.round(recording.durationMs / 1000)}s` 
+                                        : 'N/A'}
+                                    </TableCell>
+                                    <TableCell>
+                                      <IconButton 
+                                        onClick={() => handlePlayRecording(recording)}
+                                        color={playingAudio === recording._id ? "primary" : "default"}
+                                      >
+                                        {playingAudio === recording._id ? <PauseIcon /> : <PlayArrowIcon />}
+                                      </IconButton>
+                                      <IconButton 
+                                        component="a" 
+                                        href={recording.audioUrl} 
+                                        download
+                                        target="_blank"
+                                      >
+                                        <DownloadIcon />
+                                      </IconButton>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        </AccordionDetails>
+                      </Accordion>
+                    )}
+                    
+                    {/* Test recordings */}
+                    {participantRecordings[selectedTest].categories && 
+                     participantRecordings[selectedTest].categories.test && (
+                      <Accordion defaultExpanded>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                          <Typography variant="subtitle1">Assessment Questions</Typography>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                          <TableContainer>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow>
+                                  <TableCell>Question</TableCell>
+                                  <TableCell>Recorded</TableCell>
+                                  <TableCell>Duration</TableCell>
+                                  <TableCell>Actions</TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                {participantRecordings[selectedTest].categories.test.map(recording => (
+                                  <TableRow key={recording._id}>
+                                    <TableCell>
+                                      {recording.questionId?.text || 'Unknown Question'}
+                                    </TableCell>
+                                    <TableCell>{formatDate(recording.createdAt)}</TableCell>
+                                    <TableCell>
+                                      {recording.durationMs 
+                                        ? `${Math.round(recording.durationMs / 1000)}s` 
+                                        : 'N/A'}
+                                    </TableCell>
+                                    <TableCell>
+                                      <IconButton 
+                                        onClick={() => handlePlayRecording(recording)}
+                                        color={playingAudio === recording._id ? "primary" : "default"}
+                                      >
+                                        {playingAudio === recording._id ? <PauseIcon /> : <PlayArrowIcon />}
+                                      </IconButton>
+                                      <IconButton 
+                                        component="a" 
+                                        href={recording.audioUrl} 
+                                        download
+                                        target="_blank"
+                                      >
+                                        <DownloadIcon />
+                                      </IconButton>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        </AccordionDetails>
+                      </Accordion>
+                    )}
+                    
+                    {/* Unknown type recordings (fallback) */}
+                    {participantRecordings[selectedTest].categories && 
+                     participantRecordings[selectedTest].categories.unknown && (
+                      <Accordion defaultExpanded>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                          <Typography variant="subtitle1">Other Recordings</Typography>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                          <TableContainer>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow>
+                                  <TableCell>Recording ID</TableCell>
+                                  <TableCell>Recorded</TableCell>
+                                  <TableCell>Duration</TableCell>
+                                  <TableCell>Actions</TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                {participantRecordings[selectedTest].categories.unknown.map(recording => (
+                                  <TableRow key={recording._id}>
+                                    <TableCell>{recording._id}</TableCell>
+                                    <TableCell>{formatDate(recording.createdAt)}</TableCell>
+                                    <TableCell>
+                                      {recording.durationMs 
+                                        ? `${Math.round(recording.durationMs / 1000)}s` 
+                                        : 'N/A'}
+                                    </TableCell>
+                                    <TableCell>
+                                      <IconButton 
+                                        onClick={() => handlePlayRecording(recording)}
+                                        color={playingAudio === recording._id ? "primary" : "default"}
+                                      >
+                                        {playingAudio === recording._id ? <PauseIcon /> : <PlayArrowIcon />}
+                                      </IconButton>
+                                      <IconButton 
+                                        component="a" 
+                                        href={recording.audioUrl} 
+                                        download
+                                        target="_blank"
+                                      >
+                                        <DownloadIcon />
+                                      </IconButton>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        </AccordionDetails>
+                      </Accordion>
+                    )}
+                  </Box>
                 )}
               </>
             )}

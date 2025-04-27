@@ -1,16 +1,21 @@
+// src/components/QuestionDisplay/index.js
 import React from 'react';
 import { Paper, Typography, Box, Chip } from '@mui/material';
+import { getTranslation } from '../../utils/translationService';
 
-const QuestionDisplay = ({ questionNumber, questionText, instructions, category }) => {
+const QuestionDisplay = ({ questionNumber, questionText, instructions, category, language = 'english' }) => {
+  // Get translations
+  const t = (key) => getTranslation(key, language);
+  
   // Determine the display title based on category and number
   let displayTitle = '';
   
   if (category === 'instruction') {
-    displayTitle = 'Instructions';
+    displayTitle = t('instructions');
   } else if (category === 'practice') {
-    displayTitle = `Practice ${questionNumber || ''}`;
+    displayTitle = `${t('practice')} ${questionNumber || ''}`;
   } else {
-    displayTitle = `Question ${questionNumber || ''}`;
+    displayTitle = `${questionText}`;
   }
   
   // Determine the colors based on category
@@ -29,6 +34,13 @@ const QuestionDisplay = ({ questionNumber, questionText, instructions, category 
     }
   }[category] || { bg: '#f8f9fa', chip: '#9BBDB1' };
   
+  // Get label for the chip based on category
+  const getChipLabel = () => {
+    if (category === 'instruction') return t('information');
+    if (category === 'practice') return t('practice');
+    return t('assessment');
+  };
+  
   return (
     <Paper elevation={1} sx={{ p: 3, mb: 3, backgroundColor: colors.bg, borderRadius: '12px' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: category === 'instruction' ? 0 : 2 }}>
@@ -40,7 +52,7 @@ const QuestionDisplay = ({ questionNumber, questionText, instructions, category 
         
         {category && (
           <Chip 
-            label={category === 'instruction' ? 'Information' : category === 'practice' ? 'Practice' : 'Assessment'} 
+            label={getChipLabel()} 
             size="small"
             sx={{ 
               backgroundColor: colors.chip, 
@@ -52,17 +64,17 @@ const QuestionDisplay = ({ questionNumber, questionText, instructions, category 
       </Box>
       
       {/* Only show the text if it's not redundant with the title */}
-      {(category !== 'instruction' || questionText !== 'Instructions') && (
+      {(category === 'instruction') && (
         <Typography variant="body1" paragraph>
           {questionText}
         </Typography>
       )}
       
       {/* Only show instructions box if there are meaningful instructions */}
-      {instructions && instructions !== 'Please listen to these instructions carefully.' && (
+      {instructions && instructions !== t('instructions') && (
         <Box sx={{ mt: 2, p: 2, backgroundColor: 'rgba(0,0,0,0.03)', borderRadius: 1 }}>
           <Typography variant="subtitle2" color="text.secondary" fontWeight="bold" gutterBottom>
-            Instructions:
+            {t('instructions')}
           </Typography>
           <Typography variant="body2" color="text.secondary">
             {instructions}
