@@ -17,8 +17,21 @@ import {
   FormLabel,
   RadioGroup,
   FormControlLabel,
-  Radio
+  Radio,
+  Tabs,
+  Tab,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemIcon,
+  Divider,
+  Alert
 } from '@mui/material';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import AddCircleIcon from '@mui/icons-material/AddCircle';
+import LanguageIcon from '@mui/icons-material/Language';
+
 import { useAssessment } from '../../contexts/AccessmentContext';
 import QuestionDisplay from '../../components/QuestionDisplay';
 import AudioPlayer from '../../components/AudioPlayer';
@@ -33,11 +46,18 @@ const generateParticipantId = () => {
 };
 
 const Assessment = () => {
-  const [id, setId] = useState(generateParticipantId());
-  const [recordingCompleted, setRecordingCompleted] = useState(false);
+  // Tab state
+  const [tabValue, setTabValue] = useState(0);
+  
+  // State for new test
+  const [newId, setNewId] = useState(generateParticipantId());
+  const [existingId, setExistingId] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState(
     localStorage.getItem('assessmentLanguage') || 'english'
   );
+  
+  const [recordingCompleted, setRecordingCompleted] = useState(false);
+  const [lookupError, setLookupError] = useState('');
   
   const { 
     startAssessment, 
@@ -51,13 +71,18 @@ const Assessment = () => {
     goToNextQuestion,
     completeAssessment,
     language,
+    testIndex,
     setLanguagePreference,
+    setTestIndexPreference,
     instructionQuestions,
     practiceQuestions,
     testQuestions,
     getProgress,
     getPhaseProgress,
-    resetAssessment
+    resetAssessment,
+    lookupParticipant,
+    participantAssessments,
+    lookupMode
   } = useAssessment();
   
   const navigate = useNavigate();
@@ -65,7 +90,6 @@ const Assessment = () => {
   // Reset recording completed state when question changes
   useEffect(() => {
     setRecordingCompleted(false);
-    console.log(assessmentStatus === 'not_started' || !participantId)
   }, [currentQuestionIndex]);
   
   // Auto-complete recording for questions that don't require recording
@@ -74,6 +98,12 @@ const Assessment = () => {
       setRecordingCompleted(true);
     }
   }, [currentQuestion]);
+
+  // Handle tab change
+  const handleTabChange = (event, newValue) => {
+    setTabValue(newValue);
+    setLookupError('');
+  };
   
   const handleLanguageChange = (event) => {
     const newLanguage = event.target.value;
@@ -81,18 +111,51 @@ const Assessment = () => {
     localStorage.setItem('assessmentLanguage', newLanguage);
   };
   
-  const handleStart = (e) => {
+  const handleStartNew = (e) => {
     e.preventDefault();
-    if (id.trim()) {
-      // Store ID in localStorage to persist between page reloads
-      localStorage.setItem('participantId', id);
-      
-      // Set the language preference in context
-      setLanguagePreference(selectedLanguage);
-      
-      // Start the assessment with selected language
-      startAssessment(id, selectedLanguage);
+    if (newId.trim()) {
+      // Start a new assessment with test index 0
+      startAssessment(newId, selectedLanguage, 0);
     }
+  };
+  
+  const handleLookupParticipant = async (e) => {
+    e.preventDefault();
+    if (!existingId.trim()) {
+      setLookupError('Please enter a participant ID');
+      return;
+    }
+    
+    try {
+      setLookupError('');
+      const assessments = await lookupParticipant(existingId);
+      
+      if (assessments.length === 0) {
+        setLookupError('No assessments found for this participant ID');
+      }
+    } catch (err) {
+      setLookupError('Error looking up participant');
+    }
+  };
+  
+  const handleContinueAssessment = (assessment) => {
+    // Start the assessment with the existing language and test index
+    startAssessment(
+      assessment.participantId, 
+      assessment.language, 
+      assessment.testIndex
+    );
+  };
+  
+  const handleStartNewLanguage = (language) => {
+    // Get the highest test index for this language
+    const sameLanguageTests = participantAssessments.filter(a => a.language === language);
+    const nextTestIndex = sameLanguageTests.length > 0 
+      ? Math.max(...sameLanguageTests.map(a => a.testIndex)) + 1 
+      : 0;
+    
+    // Start a new assessment with this language and the next test index
+    startAssessment(participantId, language, nextTestIndex);
   };
   
   const handleRecordingComplete = (recording) => {
@@ -136,6 +199,28 @@ const Assessment = () => {
     };
   };
   
+  // Format date for display
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Not started';
+    const date = new Date(dateString);
+    return new Intl.DateTimeFormat('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(date);
+  };
+  
+  // Helper to calculate and display completion percentage
+  const getCompletionStatus = (assessment) => {
+    if (assessment.status === 'completed') return '100% - Complete';
+    if (assessment.completionPercentage !== undefined) {
+      return `${assessment.completionPercentage}% - In Progress`;
+    }
+    return assessment.status === 'not_started' ? 'Not Started' : 'In Progress';
+  };
+  
   // Translations for UI elements
   const translations = {
     english: {
@@ -159,7 +244,19 @@ const Assessment = () => {
       letsPractice: "Let's Practice",
       startActivities: "Start Activities",
       code: "Code:",
-      of: "of"
+      of: "of",
+      newTest: "New Test",
+      continueTest: "Continue Test",
+      existingId: "Enter your existing code:",
+      lookup: "Look Up",
+      yourTests: "Your Tests",
+      startNewIn: "Start New Test in",
+      continueThis: "Continue This Test",
+      testStarted: "Test Started",
+      progress: "Progress",
+      language: "Language",
+      testNumber: "Test #",
+      noTests: "No tests found for this participant ID"
     },
     chinese: {
       welcome: "一起来学习!",
@@ -182,7 +279,19 @@ const Assessment = () => {
       letsPractice: "让我们练习",
       startActivities: "开始活动",
       code: "代码:",
-      of: "/"
+      of: "/",
+      newTest: "新测试",
+      continueTest: "继续测试",
+      existingId: "输入您的现有代码:",
+      lookup: "查找",
+      yourTests: "您的测试",
+      startNewIn: "开始新的测试，使用",
+      continueThis: "继续此测试",
+      testStarted: "测试开始于",
+      progress: "进度",
+      language: "语言",
+      testNumber: "测试 #",
+      noTests: "找不到此参与者ID的测试"
     }
   };
   
@@ -228,6 +337,10 @@ const Assessment = () => {
       border: '1px solid #e0e0e0',
       borderRadius: 2,
       bgcolor: '#f9f9f9'
+    },
+    tab: {
+      fontWeight: 600,
+      fontSize: '1rem'
     }
   };
   
@@ -263,12 +376,13 @@ const Assessment = () => {
       </Container>
     );
   }
-  // If assessment hasn't started yet, show the start page with language selection
+  
+  // If assessment hasn't started yet, show the start page with tabs for new or existing
   if (assessmentStatus === 'not_started' || !participantId) {
     return (
       <Container maxWidth="md" sx={styles.container}>
         <Paper elevation={3} sx={styles.paper}>
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
             <span role="img" aria-label="animal" style={{ fontSize: '2.5rem' }}>🦊</span>
             <Typography variant="h4" component="h1" gutterBottom sx={{ ml: 2, color: '#5783A9', fontWeight: 600 }}>
               {t.welcome}
@@ -279,102 +393,277 @@ const Assessment = () => {
             {t.intro}
           </Typography>
           
-          {/* Language selection */}
-          <Box sx={styles.languageSelector}>
-            <FormControl component="fieldset">
-              <FormLabel 
-                component="legend" 
-                sx={{ 
-                  color: '#5783A9', 
-                  fontWeight: 500,
-                  fontSize: '1.1rem', 
-                  mb: 2
-                }}
-              >
-                {t.languageLabel}
-              </FormLabel>
-              
-              <RadioGroup
-                value={selectedLanguage}
-                onChange={handleLanguageChange}
-                sx={{
-                  display: 'flex',
-                  flexDirection: 'row',
-                  gap: 4
-                }}
-              >
-                <FormControlLabel 
-                  value="english" 
-                  control={<Radio sx={{ color: '#5783A9' }} />} 
-                  label={
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      <span role="img" aria-label="flag" style={{ marginRight: '8px', fontSize: '1.5rem' }}>🇺🇸</span>
-                      <Typography>{t.english}</Typography>
-                    </Box>
-                  }
-                  sx={{ 
-                    p: 1, 
-                    border: selectedLanguage === 'english' ? '2px solid #9BBDB1' : '2px solid transparent',
-                    borderRadius: 2
-                  }}
-                />
-                
-                <FormControlLabel 
-                  value="chinese" 
-                  control={<Radio sx={{ color: '#5783A9' }} />} 
-                  label={
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      <span role="img" aria-label="flag" style={{ marginRight: '8px', fontSize: '1.5rem' }}>🇨🇳</span>
-                      <Typography>{t.chinese}</Typography>
-                    </Box>
-                  }
-                  sx={{ 
-                    p: 1, 
-                    border: selectedLanguage === 'chinese' ? '2px solid #9BBDB1' : '2px solid transparent',
-                    borderRadius: 2
-                  }}
-                />
-              </RadioGroup>
-            </FormControl>
+          {/* Tabs for new or continue */}
+          <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+            <Tabs 
+              value={tabValue} 
+              onChange={handleTabChange} 
+              variant="fullWidth"
+              sx={{ mb: 2 }}
+            >
+              <Tab label={t.newTest} sx={styles.tab} />
+              <Tab label={t.continueTest} sx={styles.tab} />
+            </Tabs>
           </Box>
           
-          {/* Participant ID and start button */}
-          <Box component="form" onSubmit={handleStart} sx={{ mt: 4, maxWidth: '500px', mx: 'auto' }}>
-            <Typography variant="subtitle1" align="left" gutterBottom sx={{ color: '#5783A9' }}>
-              {t.codeLabel}
-            </Typography>
-            <TextField
-              fullWidth
-              value={id}
-              onChange={(e) => setId(e.target.value)}
-              variant="outlined"
-              InputProps={{
-                readOnly: false,
-                sx: { borderRadius: 2, borderColor: '#9BBDB1' }
-              }}
-              sx={{ mb: 2 }}
-            />
-            <Typography variant="body2" color="text.secondary" paragraph align="left">
-              {t.codeHelp}
-            </Typography>
-            
-            <Button 
-              type="submit" 
-              variant="contained" 
-              size="large" 
-              sx={{ 
-                mt: 3, 
-                bgcolor: '#9BBDB1', 
-                '&:hover': { bgcolor: '#80a396' },
-                borderRadius: 4,
-                py: 1.5,
-                fontSize: '1.1rem'
-              }}
-              fullWidth
-            >
-              {t.startButton}
-            </Button>
-          </Box>
+          {/* New Test Tab */}
+          {tabValue === 0 && (
+            <>
+              {/* Language selection */}
+              <Box sx={styles.languageSelector}>
+                <FormControl component="fieldset">
+                  <FormLabel 
+                    component="legend" 
+                    sx={{ 
+                      color: '#5783A9', 
+                      fontWeight: 500,
+                      fontSize: '1.1rem', 
+                      mb: 2
+                    }}
+                  >
+                    {t.languageLabel}
+                  </FormLabel>
+                  
+                  <RadioGroup
+                    value={selectedLanguage}
+                    onChange={handleLanguageChange}
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'row',
+                      gap: 4
+                    }}
+                  >
+                    <FormControlLabel 
+                      value="english" 
+                      control={<Radio sx={{ color: '#5783A9' }} />} 
+                      label={
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          <span role="img" aria-label="flag" style={{ marginRight: '8px', fontSize: '1.5rem' }}>🇺🇸</span>
+                          <Typography>{t.english}</Typography>
+                        </Box>
+                      }
+                      sx={{ 
+                        p: 1, 
+                        border: selectedLanguage === 'english' ? '2px solid #9BBDB1' : '2px solid transparent',
+                        borderRadius: 2
+                      }}
+                    />
+                    
+                    <FormControlLabel 
+                      value="chinese" 
+                      control={<Radio sx={{ color: '#5783A9' }} />} 
+                      label={
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          <span role="img" aria-label="flag" style={{ marginRight: '8px', fontSize: '1.5rem' }}>🇨🇳</span>
+                          <Typography>{t.chinese}</Typography>
+                        </Box>
+                      }
+                      sx={{ 
+                        p: 1, 
+                        border: selectedLanguage === 'chinese' ? '2px solid #9BBDB1' : '2px solid transparent',
+                        borderRadius: 2
+                      }}
+                    />
+                  </RadioGroup>
+                </FormControl>
+              </Box>
+              
+              {/* Participant ID and start button */}
+              <Box component="form" onSubmit={handleStartNew} sx={{ mt: 4, maxWidth: '500px', mx: 'auto' }}>
+                <Typography variant="subtitle1" align="left" gutterBottom sx={{ color: '#5783A9' }}>
+                  {t.codeLabel}
+                </Typography>
+                <TextField
+                  fullWidth
+                  value={newId}
+                  onChange={(e) => setNewId(e.target.value)}
+                  variant="outlined"
+                  InputProps={{
+                    readOnly: false,
+                    sx: { borderRadius: 2, borderColor: '#9BBDB1' }
+                  }}
+                  sx={{ mb: 2 }}
+                />
+                <Typography variant="body2" color="text.secondary" paragraph align="left">
+                  {t.codeHelp}
+                </Typography>
+                
+                <Button 
+                  type="submit" 
+                  variant="contained" 
+                  size="large" 
+                  sx={{ 
+                    mt: 3, 
+                    bgcolor: '#9BBDB1', 
+                    '&:hover': { bgcolor: '#80a396' },
+                    borderRadius: 4,
+                    py: 1.5,
+                    fontSize: '1.1rem'
+                  }}
+                  fullWidth
+                >
+                  {t.startButton}
+                </Button>
+              </Box>
+            </>
+          )}
+          
+          {/* Continue Test Tab */}
+          {tabValue === 1 && (
+            <>
+              {/* Lookup form */}
+              <Box component="form" onSubmit={handleLookupParticipant} sx={{ mb: 4 }}>
+                <Typography variant="subtitle1" gutterBottom>
+                  {t.existingId}
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 2 }}>
+                  <TextField
+                    fullWidth
+                    value={existingId}
+                    onChange={(e) => setExistingId(e.target.value)}
+                    variant="outlined"
+                    placeholder="e.g. P20220101-001"
+                    sx={{ mb: 1 }}
+                  />
+                  <Button 
+                    type="submit" 
+                    variant="contained"
+                    disabled={loading}
+                  >
+                    {loading ? <CircularProgress size={24} /> : t.lookup}
+                  </Button>
+                </Box>
+                
+                {lookupError && (
+                  <Alert severity="error" sx={{ mt: 2 }}>
+                    {lookupError}
+                  </Alert>
+                )}
+              </Box>
+              
+              {/* Display participant's assessments if found */}
+              {lookupMode && participantAssessments.length > 0 && (
+                <Box>
+                  <Typography variant="h6" gutterBottom>
+                    {t.yourTests}
+                  </Typography>
+                  
+                  <List>
+                    {participantAssessments.map((assessment, index) => (
+                      <React.Fragment key={`${assessment.language}-${assessment.testIndex}`}>
+                        {index > 0 && <Divider />}
+                        <ListItem 
+                          sx={{ 
+                            py: 2,
+                            bgcolor: assessment.status === 'completed' 
+                              ? '#f0f7f0' 
+                              : assessment.status === 'in_progress' 
+                                ? '#f0f7ff' 
+                                : 'transparent',
+                            '&:hover': { bgcolor: '#f9f9f9' } 
+                          }}
+                        >
+                          <ListItemIcon>
+                            {assessment.status === 'completed' ? (
+                              <CheckCircleIcon color="success" />
+                            ) : assessment.status === 'in_progress' ? (
+                              <PlayArrowIcon color="primary" />
+                            ) : (
+                              <span role="img" aria-label="language" style={{ fontSize: '1.5rem' }}>
+                                {assessment.language === 'chinese' ? '🇨🇳' : '🇺🇸'}
+                              </span>
+                            )}
+                          </ListItemIcon>
+                          
+                          <ListItemText
+                            primary={
+                              <Typography variant="subtitle1">
+                                {assessment.language === 'english' ? 'English' : '中文 (Chinese)'} - {t.testNumber} {assessment.testIndex + 1}
+                              </Typography>
+                            }
+                            secondary={
+                              <>
+                                <Typography variant="body2" component="span">
+                                  {assessment.startedAt ? (
+                                    <>
+                                      <strong>{t.testStarted}:</strong> {formatDate(assessment.startedAt)}
+                                      <br />
+                                    </>
+                                  ) : null}
+                                  <strong>{t.progress}:</strong> {getCompletionStatus(assessment)}
+                                  </Typography>
+                                </>
+                              }
+                          />
+                          
+                          <Button
+                            variant="contained"
+                            color={assessment.status === 'completed' ? 'success' : 'primary'}
+                            onClick={() => handleContinueAssessment(assessment)}
+                            sx={{ ml: 2 }}
+                          >
+                            {assessment.status === 'completed' 
+                              ? t.startNewIn 
+                              : t.continueThis}
+                          </Button>
+                        </ListItem>
+                      </React.Fragment>
+                    ))}
+                  </List>
+                  
+                  {/* Start new test in another language */}
+                  <Box sx={{ mt: 4, p: 3, bgcolor: '#f9f9f9', borderRadius: 2 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      {t.startNewIn}:
+                    </Typography>
+                    
+                    <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
+                      {/* Check if participant has an English test already */}
+                      {!participantAssessments.some(a => a.language === 'english' && a.status !== 'completed') && (
+                        <Button
+                          variant="outlined"
+                          startIcon={<LanguageIcon />}
+                          onClick={() => handleStartNewLanguage('english')}
+                        >
+                          English
+                        </Button>
+                      )}
+                      
+                      {/* Check if participant has a Chinese test already */}
+                      {!participantAssessments.some(a => a.language === 'chinese' && a.status !== 'completed') && (
+                        <Button
+                          variant="outlined"
+                          startIcon={<LanguageIcon />}
+                          onClick={() => handleStartNewLanguage('chinese')}
+                        >
+                          中文 (Chinese)
+                        </Button>
+                      )}
+                      
+                      {/* Start a new test in the same language */}
+                      <Button
+                        variant="outlined"
+                        startIcon={<AddCircleIcon />}
+                        onClick={() => handleStartNewLanguage(
+                          participantAssessments[0]?.language || 'english'
+                        )}
+                      >
+                        {participantAssessments[0]?.language === 'chinese' 
+                          ? '新的中文测试' 
+                          : 'New English Test'}
+                      </Button>
+                    </Box>
+                  </Box>
+                </Box>
+              )}
+              
+              {lookupMode && participantAssessments.length === 0 && !lookupError && (
+                <Alert severity="info">
+                  {t.noTests}
+                </Alert>
+              )}
+            </>
+          )}
         </Paper>
       </Container>
     );
@@ -420,7 +709,7 @@ const Assessment = () => {
             </Typography>
           </Box>
           
-          {/* Language indicator */}
+          {/* Language and test number indicator */}
           <Box sx={{ 
             display: 'flex', 
             alignItems: 'center',
@@ -433,7 +722,7 @@ const Assessment = () => {
               {language === 'chinese' ? '🇨🇳' : '🇺🇸'}
             </span>
             <Typography variant="body2" sx={{ color: '#5783A9', fontWeight: 500 }}>
-              {language === 'chinese' ? '中文' : 'English'}
+              {language === 'chinese' ? '中文' : 'English'} - {t.testNumber} {testIndex + 1}
             </Typography>
           </Box>
           
@@ -525,6 +814,7 @@ const Assessment = () => {
                 questionId={currentQuestion._id}
                 onRecordingComplete={handleRecordingComplete}
                 language={language}
+                testIndex={testIndex}
               />
             )}
             

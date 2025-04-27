@@ -263,10 +263,16 @@ function createMockQuestions(language) {
   return questions;
 }
 
-// Upload a recording to the backend with language metadata
-export const uploadRecording = async ({ questionId, participantId, audioBlob, duration, language = 'english' }) => {
+// Updated uploadRecording function for src/utils/api.js
+export const uploadRecording = async ({ questionId, participantId, audioBlob, duration, language = 'english', testIndex = 0 }) => {
   try {
-    console.log('Uploading recording:', { questionId, participantId, duration, language });
+    console.log('Uploading recording:', { 
+      questionId, 
+      participantId, 
+      duration, 
+      language, 
+      testIndex 
+    });
     
     // Try to use the real API first
     try {
@@ -275,7 +281,8 @@ export const uploadRecording = async ({ questionId, participantId, audioBlob, du
       formData.append('questionId', questionId);
       formData.append('participantId', participantId);
       formData.append('duration', duration || 0);
-      formData.append('language', language); // Add language parameter
+      formData.append('language', language);
+      formData.append('testIndex', testIndex);
       
       const response = await api.post('/recordings', formData, {
         headers: {
@@ -295,15 +302,17 @@ export const uploadRecording = async ({ questionId, participantId, audioBlob, du
       participantId,
       duration,
       language,
+      testIndex,
       audioUrl: URL.createObjectURL(audioBlob) || 'https://example.com/mock-recording.wav',
       timestamp: new Date().toISOString()
     };
     
     // Store in memory for persistence
-    if (!inMemoryStore.participantData[participantId]) {
-      inMemoryStore.participantData[participantId] = { recordings: [] };
+    const memoryKey = `${participantId}_${language}_${testIndex}`;
+    if (!inMemoryStore.participantData[memoryKey]) {
+      inMemoryStore.participantData[memoryKey] = { recordings: [] };
     }
-    inMemoryStore.participantData[participantId].recordings.push(mockRecording);
+    inMemoryStore.participantData[memoryKey].recordings.push(mockRecording);
     
     console.log('Mock recording created:', mockRecording);
     return { success: true, recording: mockRecording };
@@ -315,20 +324,23 @@ export const uploadRecording = async ({ questionId, participantId, audioBlob, du
       recording: { 
         _id: `error_recording_${Date.now()}`,
         audioUrl: 'https://example.com/error-recording.wav',
-        language: language
+        language: language,
+        testIndex: testIndex
       }
     };
   }
 };
 
-// Get assessment status for a participant
-export const getAssessmentStatus = async (participantId) => {
+// Get assessment status with language and test index
+export const getAssessmentStatus = async (participantId, language = 'english', testIndex = 0) => {
   try {
-    console.log('Getting assessment status for participant:', participantId);
+    console.log(`Getting assessment status for participant: ${participantId}, language: ${language}, testIndex: ${testIndex}`);
     
     // Try to use the real API first
     try {
-      const response = await api.get(`/assessments/status/${participantId}`);
+      const response = await api.get(`/assessments/status/${participantId}`, {
+        params: { language, testIndex }
+      });
       if (response.data) {
         return response.data;
       }
@@ -337,7 +349,8 @@ export const getAssessmentStatus = async (participantId) => {
     }
     
     // Try to get from localStorage
-    const storedStatus = safeLocalStorage.getItem(`assessment_${participantId}`);
+    const storageKey = `assessment_${participantId}_${language}_${testIndex}`;
+    const storedStatus = safeLocalStorage.getItem(storageKey);
     if (storedStatus) {
       try {
         const parsedStatus = JSON.parse(storedStatus);
@@ -349,51 +362,60 @@ export const getAssessmentStatus = async (participantId) => {
     }
     
     // Try to get from memory store
-    if (inMemoryStore.participantData[participantId]?.status) {
-      console.log('Retrieved status from memory store:', inMemoryStore.participantData[participantId].status);
-      return inMemoryStore.participantData[participantId].status;
+    const memoryKey = `${participantId}_${language}_${testIndex}`;
+    if (inMemoryStore.participantData[memoryKey]?.status) {
+      console.log('Retrieved status from memory store:', inMemoryStore.participantData[memoryKey].status);
+      return inMemoryStore.participantData[memoryKey].status;
     }
     
     // If no status found, create a new one
     console.log('No existing status found, creating new status');
     const newStatus = {
-      status: 'in_progress',
+      participantId,
+      language,
+      testIndex,
+      status: 'not_started',
       lastQuestionIndex: 0
     };
     
     // Store the new status
-    if (!inMemoryStore.participantData[participantId]) {
-      inMemoryStore.participantData[participantId] = {};
+    if (!inMemoryStore.participantData[memoryKey]) {
+      inMemoryStore.participantData[memoryKey] = {};
     }
-    inMemoryStore.participantData[participantId].status = newStatus;
-    safeLocalStorage.setItem(`assessment_${participantId}`, JSON.stringify(newStatus));
+    inMemoryStore.participantData[memoryKey].status = newStatus;
+    safeLocalStorage.setItem(storageKey, JSON.stringify(newStatus));
     
     return newStatus;
   } catch (error) {
     console.error('Error in getAssessmentStatus:', error);
     // Return a default status to keep the app functioning
     return {
-      status: 'in_progress',
+      participantId,
+      language,
+      testIndex,
+      status: 'not_started',
       lastQuestionIndex: 0
     };
   }
 };
 
-// Update assessment status
-export const updateAssessmentStatus = async (participantId, status, lastQuestionIndex) => {
+// Update assessment status with language and test index
+export const updateAssessmentStatus = async (participantId, status, lastQuestionIndex, language = 'english', testIndex = 0) => {
   try {
-    console.log('Updating assessment status:', { participantId, status, lastQuestionIndex });
+    console.log('Updating assessment status:', { participantId, status, lastQuestionIndex, language, testIndex });
     
     // Create the status object
-    const statusData = { status, lastQuestionIndex };
+    const statusData = { 
+      participantId, 
+      status, 
+      lastQuestionIndex, 
+      language, 
+      testIndex
+    };
     
     // Try to use the real API first
     try {
-      const response = await api.post('/assessments/status', {
-        participantId,
-        status,
-        lastQuestionIndex
-      });
+      const response = await api.post('/assessments/status', statusData);
       
       if (response.data) {
         console.log('Status updated via API');
@@ -403,19 +425,75 @@ export const updateAssessmentStatus = async (participantId, status, lastQuestion
     }
     
     // Store in memory for persistence
-    if (!inMemoryStore.participantData[participantId]) {
-      inMemoryStore.participantData[participantId] = {};
+    const memoryKey = `${participantId}_${language}_${testIndex}`;
+    if (!inMemoryStore.participantData[memoryKey]) {
+      inMemoryStore.participantData[memoryKey] = {};
     }
-    inMemoryStore.participantData[participantId].status = statusData;
+    inMemoryStore.participantData[memoryKey].status = statusData;
     
     // Try to update localStorage
-    safeLocalStorage.setItem(`assessment_${participantId}`, JSON.stringify(statusData));
+    const storageKey = `assessment_${participantId}_${language}_${testIndex}`;
+    safeLocalStorage.setItem(storageKey, JSON.stringify(statusData));
     
     return { success: true, status: statusData };
   } catch (error) {
     console.error('Error updating assessment status:', error);
     // Return success even if there was an error, to keep the app functioning
-    return { success: true, status: { status, lastQuestionIndex } };
+    return { success: true };
+  }
+};
+
+// Get all assessments for a participant
+export const getParticipantAssessments = async (participantId) => {
+  try {
+    console.log(`Fetching assessments for participant: ${participantId}`);
+    
+    // Try to use the real API first
+    try {
+      const response = await api.get(`/assessments/participant/${participantId}`);
+      if (response.data) {
+        console.log(`Retrieved ${response.data.length} assessments from API`);
+        return response.data;
+      }
+    } catch (apiError) {
+      console.warn('API assessments fetch failed, using mock data:', apiError);
+    }
+    
+    // If API call fails, create mock assessments
+    const mockAssessments = [
+      {
+        participantId,
+        language: 'english',
+        testIndex: 0,
+        status: 'in_progress',
+        startedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+        lastQuestionIndex: 2,
+        totalQuestions: 6,
+        totalRecordings: 3,
+        completionPercentage: 50
+      }
+    ];
+    
+    // Check if we have Chinese language preference stored
+    const hasChinesePref = localStorage.getItem('assessmentLanguage') === 'chinese';
+    if (hasChinesePref) {
+      mockAssessments.push({
+        participantId,
+        language: 'chinese',
+        testIndex: 0,
+        status: 'not_started',
+        lastQuestionIndex: 0,
+        totalQuestions: 6,
+        totalRecordings: 0,
+        completionPercentage: 0
+      });
+    }
+    
+    console.log('Using mock assessments data:', mockAssessments);
+    return mockAssessments;
+  } catch (error) {
+    console.error('Error fetching participant assessments:', error);
+    return [];
   }
 };
 

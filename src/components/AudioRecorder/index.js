@@ -4,7 +4,7 @@ import { Button, CircularProgress, Box, Typography, LinearProgress } from '@mui/
 import { uploadRecording } from '../../utils/api';
 import { useAssessment } from '../../contexts/AccessmentContext';
 
-const AudioRecorder = ({ questionId, onRecordingComplete }) => {
+const AudioRecorder = ({ questionId, onRecordingComplete, language, testIndex }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioBlob, setAudioBlob] = useState(null);
@@ -140,24 +140,30 @@ const AudioRecorder = ({ questionId, onRecordingComplete }) => {
         });
       }, 200);
       
-      // Create a proper filename for the recording
-      const filename = `recording_${participantId}_${questionId}_${Date.now()}.wav`;
+      // Create a proper filename for the recording with language and test index
+      const currentLanguage = language || 'english';
+      const currentTestIndex = testIndex || 0;
+      const filename = `recording_${participantId}_${currentLanguage}_${currentTestIndex}_${questionId}_${Date.now()}.wav`;
       
       const response = await uploadRecording({
         questionId,
         participantId,
         audioBlob: new File([audioBlob], filename, { type: 'audio/wav' }),
-        duration: recordingTime * 1000 // Convert to milliseconds
+        duration: recordingTime * 1000, // Convert to milliseconds
+        language: currentLanguage,
+        testIndex: currentTestIndex
       });
       
       clearInterval(progressInterval);
       setUploadProgress(100);
       
-      // Add recording to context
+      // Add recording to context with language and test index
       addRecording({
         questionId,
         audioUrl: response.recording.audioUrl,
-        timestamp: new Date()
+        timestamp: new Date(),
+        language: currentLanguage,
+        testIndex: currentTestIndex
       });
       
       // Wait a moment to show 100% completion
