@@ -555,7 +555,7 @@ const Assessment = () => {
                 </Typography>
                 
                 <Grid container spacing={3}>
-                  <Grid item xs={12} md={6}>
+                  <Grid item size={6}>
                     <FormControl fullWidth variant="outlined" sx={{ mb: 2 }}>
                       <InputLabel id="age-select-label">{t.ageLabel}</InputLabel>
                       <Select
@@ -575,7 +575,7 @@ const Assessment = () => {
                     </FormControl>
                   </Grid>
                   
-                  <Grid item xs={12} md={6}>
+                  <Grid item size={6}>
                     <FormControl fullWidth variant="outlined">
                       <InputLabel id="sex-select-label">{t.sexLabel}</InputLabel>
                       <Select

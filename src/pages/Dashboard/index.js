@@ -58,11 +58,18 @@ const Dashboard = () => {
       setPlayingAudio(null);
     });
     
+    audio.addEventListener('error', (e) => {
+      console.error('Audio playback error:', e);
+      setPlayingAudio(null);
+    });
+    
     setAudioElement(audio);
     
     return () => {
-      audio.pause();
-      audio.src = '';
+      if (audio) {
+        audio.pause();
+        audio.src = '';
+      }
     };
   }, []);
   
@@ -109,7 +116,7 @@ const Dashboard = () => {
     }, {});
   };
   
-  // Load recordings for a participant when selected
+  // In the handleViewParticipant function in Dashboard/index.js
   const handleViewParticipant = async (participant) => {
     setSelectedParticipant(participant);
     setTabValue(1); // Switch to participant tab
@@ -121,8 +128,19 @@ const Dashboard = () => {
       
       const recordings = await getRecordingsByParticipant(participant.participantId);
       
+      console.log('Recordings received:', recordings);
+      
+      if (!recordings || recordings.length === 0) {
+        console.log('No recordings found for participant:', participant.participantId);
+        setRecordingError("No recordings found for this participant.");
+        setParticipantRecordings({});
+        setLoadingRecordings(false);
+        return;
+      }
+      
       // Group recordings by test first
       const groupedByTest = groupRecordingsByTest(recordings);
+      console.log('Grouped by test:', groupedByTest);
       
       // For each test, group recordings by question type
       Object.keys(groupedByTest).forEach(testKey => {
@@ -130,7 +148,29 @@ const Dashboard = () => {
         
         // Group by question category within each test
         groupedByTest[testKey].categories = testRecordings.reduce((acc, recording) => {
-          const category = recording.questionId?.category || 'unknown';
+          // Check for various possible category field names
+          let category = 'unknown';
+          
+          if (recording.questionId) {
+            if (typeof recording.questionId === 'string') {
+              // If questionId is just a string ID, default to 'unknown'
+              category = 'unknown';
+            } else {
+              // Try various possible field names for category
+              category = recording.questionId.category || 
+                        recording.questionId.audioType || 
+                        recording.questionType ||
+                        recording.category ||
+                        'unknown';
+            }
+          } else if (recording.category) {
+            category = recording.category;
+          } else if (recording.audioType) {
+            category = recording.audioType;
+          }
+          
+          console.log(`Recording ${recording._id} categorized as: ${category}`);
+          
           if (!acc[category]) {
             acc[category] = [];
           }
@@ -138,6 +178,8 @@ const Dashboard = () => {
           return acc;
         }, {});
       });
+      
+      console.log('Final categorized recordings:', groupedByTest);
       
       setParticipantRecordings(groupedByTest);
       
@@ -147,7 +189,8 @@ const Dashboard = () => {
       }
     } catch (err) {
       console.error('Error loading recordings:', err);
-      setRecordingError('Failed to load participant recordings.');
+      setRecordingError('Failed to load participant recordings: ' + 
+        (err.response?.data?.message || err.message || 'Unknown error'));
     } finally {
       setLoadingRecordings(false);
     }
@@ -157,22 +200,33 @@ const Dashboard = () => {
   const handlePlayRecording = (recording) => {
     if (playingAudio === recording._id) {
       // If this recording is currently playing, pause it
-      audioElement.pause();
-      setPlayingAudio(null);
-    } else {
-      // If another recording is playing, stop it first
-      if (audioElement.src) {
+      if (audioElement) {
         audioElement.pause();
+        setPlayingAudio(null);
+      }
+    } else {
+      // If any audio is playing, stop it first
+      if (audioElement) {
+        audioElement.pause();
+        audioElement.currentTime = 0;
       }
       
       // Play the new recording
-      audioElement.src = recording.audioUrl;
-      audioElement.play().catch(error => {
-        console.error('Error playing audio:', error);
-        // Handle the error (e.g., show a notification)
-      });
-      
-      setPlayingAudio(recording._id);
+      if (audioElement && recording.audioUrl) {
+        audioElement.src = recording.audioUrl;
+        
+        // Handle playback errors
+        const playPromise = audioElement.play();
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            setPlayingAudio(recording._id);
+          }).catch(error => {
+            console.error('Error playing audio:', error);
+            setPlayingAudio(null);
+            // Optionally show a notification to the user
+          });
+        }
+      }
     }
   };
   
@@ -249,6 +303,35 @@ const Dashboard = () => {
       default:
         return 'default';
     }
+  };
+  
+  // Calculate accurate test progress
+  const calculateTestProgress = (test) => {
+    if (!test || !test.recordings) return 0;
+    
+    // Find the test in participant data for accurate question count
+    const participantTest = selectedParticipant?.tests?.find(
+      t => t.language === test.language && t.testIndex === test.testIndex
+    );
+    
+    // Get completion percentage from participant data if available
+    if (participantTest && participantTest.completionPercentage !== undefined) {
+      return participantTest.completionPercentage;
+    }
+    
+    // Estimate based on recording count and expected question count
+    // Typically 6 questions (1 instruction, 2 practice, 3 test)
+    const expectedQuestionCount = participantTest?.totalQuestions || 6;
+    const recordingCount = test.recordings.length;
+    
+    // Filter out instruction recordings which aren't required
+    const nonInstructionRecordings = test.recordings.filter(rec => 
+      rec.questionId?.category !== 'instruction' && 
+      rec.questionId?.audioType !== 'instruction'
+    );
+    
+    // Calculate progress based on required recordings only
+    return Math.round((nonInstructionRecordings.length / (expectedQuestionCount - 1)) * 100);
   };
   
   // Dashboard overview tab
@@ -470,6 +553,15 @@ const Dashboard = () => {
                     const test = participantRecordings[testKey];
                     const progressPercentage = calculateTestProgress(test);
                     
+                    // Find the matching test from participant data
+                    const participantTest = selectedParticipant?.tests?.find(
+                      t => t.language === test.language && t.testIndex === test.testIndex
+                    );
+                    
+                    // Use status from participant data if available
+                    const testStatus = participantTest ? participantTest.status : 
+                                     (progressPercentage === 100 ? 'completed' : 'in_progress');
+                    
                     return (
                       <Button 
                         key={testKey}
@@ -485,7 +577,7 @@ const Dashboard = () => {
                           justifyContent: 'flex-start',
                           borderColor: selectedTest === testKey ? 'primary.main' : '#e0e0e0',
                           backgroundColor: selectedTest === testKey ? 'primary.main' : 
-                            progressPercentage === 100 ? '#e8f5e9' : 
+                            testStatus === 'completed' ? '#e8f5e9' : 
                             progressPercentage > 0 ? '#fff8e1' : 'transparent'
                         }}
                       >
@@ -494,7 +586,7 @@ const Dashboard = () => {
                             {test.language === 'chinese' ? '中文 (Chinese)' : 'English'} - Test #{test.testIndex + 1}
                           </Typography>
                           <Typography variant="caption" color="textSecondary">
-                            Progress: {progressPercentage}%
+                            Progress: {progressPercentage}% {testStatus === 'completed' ? '(Completed)' : ''}
                           </Typography>
                         </Box>
                       </Button>
@@ -535,9 +627,10 @@ const Dashboard = () => {
                       Test #{participantRecordings[selectedTest].testIndex + 1}
                     </Typography>
                     
-                    {/* Instruction recordings */}
+                    {/* Instruction recordings - Only show if they exist */}
                     {participantRecordings[selectedTest].categories && 
-                     participantRecordings[selectedTest].categories.instruction && (
+                     participantRecordings[selectedTest].categories.instruction && 
+                     participantRecordings[selectedTest].categories.instruction.length > 0 && (
                       <Accordion defaultExpanded>
                         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                           <Typography variant="subtitle1">Instructions</Typography>
@@ -569,17 +662,20 @@ const Dashboard = () => {
                                       <IconButton 
                                         onClick={() => handlePlayRecording(recording)}
                                         color={playingAudio === recording._id ? "primary" : "default"}
+                                        disabled={!recording.audioUrl}
                                       >
                                         {playingAudio === recording._id ? <PauseIcon /> : <PlayArrowIcon />}
                                       </IconButton>
-                                      <IconButton 
-                                        component="a" 
-                                        href={recording.audioUrl} 
-                                        download
-                                        target="_blank"
-                                      >
-                                        <DownloadIcon />
-                                      </IconButton>
+                                      {recording.audioUrl && (
+                                        <IconButton 
+                                          component="a" 
+                                          href={recording.audioUrl} 
+                                          download
+                                          target="_blank"
+                                        >
+                                          <DownloadIcon />
+                                        </IconButton>
+                                      )}
                                     </TableCell>
                                   </TableRow>
                                 ))}
@@ -592,7 +688,8 @@ const Dashboard = () => {
                     
                     {/* Practice recordings */}
                     {participantRecordings[selectedTest].categories && 
-                     participantRecordings[selectedTest].categories.practice && (
+                     participantRecordings[selectedTest].categories.practice && 
+                     participantRecordings[selectedTest].categories.practice.length > 0 && (
                       <Accordion defaultExpanded>
                         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                           <Typography variant="subtitle1">Practice Questions</Typography>
@@ -624,17 +721,20 @@ const Dashboard = () => {
                                       <IconButton 
                                         onClick={() => handlePlayRecording(recording)}
                                         color={playingAudio === recording._id ? "primary" : "default"}
+                                        disabled={!recording.audioUrl}
                                       >
                                         {playingAudio === recording._id ? <PauseIcon /> : <PlayArrowIcon />}
                                       </IconButton>
-                                      <IconButton 
-                                        component="a" 
-                                        href={recording.audioUrl} 
-                                        download
-                                        target="_blank"
-                                      >
-                                        <DownloadIcon />
-                                      </IconButton>
+                                      {recording.audioUrl && (
+                                        <IconButton 
+                                          component="a" 
+                                          href={recording.audioUrl} 
+                                          download
+                                          target="_blank"
+                                        >
+                                          <DownloadIcon />
+                                        </IconButton>
+                                      )}
                                     </TableCell>
                                   </TableRow>
                                 ))}
@@ -647,7 +747,8 @@ const Dashboard = () => {
                     
                     {/* Test recordings */}
                     {participantRecordings[selectedTest].categories && 
-                     participantRecordings[selectedTest].categories.test && (
+                     participantRecordings[selectedTest].categories.test && 
+                     participantRecordings[selectedTest].categories.test.length > 0 && (
                       <Accordion defaultExpanded>
                         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                           <Typography variant="subtitle1">Assessment Questions</Typography>
@@ -679,17 +780,20 @@ const Dashboard = () => {
                                       <IconButton 
                                         onClick={() => handlePlayRecording(recording)}
                                         color={playingAudio === recording._id ? "primary" : "default"}
+                                        disabled={!recording.audioUrl}
                                       >
                                         {playingAudio === recording._id ? <PauseIcon /> : <PlayArrowIcon />}
                                       </IconButton>
-                                      <IconButton 
-                                        component="a" 
-                                        href={recording.audioUrl} 
-                                        download
-                                        target="_blank"
-                                      >
-                                        <DownloadIcon />
-                                      </IconButton>
+                                      {recording.audioUrl && (
+                                        <IconButton 
+                                          component="a" 
+                                          href={recording.audioUrl} 
+                                          download
+                                          target="_blank"
+                                        >
+                                          <DownloadIcon />
+                                        </IconButton>
+                                      )}
                                     </TableCell>
                                   </TableRow>
                                 ))}
@@ -702,7 +806,8 @@ const Dashboard = () => {
                     
                     {/* Unknown type recordings (fallback) */}
                     {participantRecordings[selectedTest].categories && 
-                     participantRecordings[selectedTest].categories.unknown && (
+                     participantRecordings[selectedTest].categories.unknown && 
+                     participantRecordings[selectedTest].categories.unknown.length > 0 && (
                       <Accordion defaultExpanded>
                         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                           <Typography variant="subtitle1">Other Recordings</Typography>
@@ -732,17 +837,20 @@ const Dashboard = () => {
                                       <IconButton 
                                         onClick={() => handlePlayRecording(recording)}
                                         color={playingAudio === recording._id ? "primary" : "default"}
+                                        disabled={!recording.audioUrl}
                                       >
                                         {playingAudio === recording._id ? <PauseIcon /> : <PlayArrowIcon />}
                                       </IconButton>
-                                      <IconButton 
-                                        component="a" 
-                                        href={recording.audioUrl} 
-                                        download
-                                        target="_blank"
-                                      >
-                                        <DownloadIcon />
-                                      </IconButton>
+                                      {recording.audioUrl && (
+                                        <IconButton 
+                                          component="a" 
+                                          href={recording.audioUrl} 
+                                          download
+                                          target="_blank"
+                                        >
+                                          <DownloadIcon />
+                                        </IconButton>
+                                      )}
                                     </TableCell>
                                   </TableRow>
                                 ))}
@@ -761,22 +869,6 @@ const Dashboard = () => {
       )}
     </Box>
   );
-  
-  // Calculate test progress
-  const calculateTestProgress = (testData) => {
-    if (!testData) return 0;
-    
-    // Count recordings by category
-    let totalRecordings = 0;
-    let totalQuestions = 10; // Default for estimation
-    
-    Object.keys(testData.categories || {}).forEach(category => {
-      totalRecordings += testData.categories[category].length;
-    });
-    
-    // Calculate progress percentage
-    return Math.round((totalRecordings / totalQuestions) * 100);
-  };
   
   return (
     <Container>
